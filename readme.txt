@@ -4,7 +4,7 @@
 一個商品可設定多個服務方案（名稱／時長／價格），客人選方案、選服務人員、選時段後才加入購物車，
 同一位人員同一個時段不會被重複賣出。
 
-由 NiBill（https://nibill-studio.com/）開發維護。
+由 快捷鍵Ctrl+A（https://nibill-studio.com/）開發維護。
 
 ## 主要功能
 

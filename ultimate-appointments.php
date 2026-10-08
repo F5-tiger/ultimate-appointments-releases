@@ -3,8 +3,8 @@
  * Plugin Name: Ultimate Appointments
  * Plugin URI:  https://nibill-studio.com/
  * Description: 新增「預約商品」商品類型，讓服務業以類似飯店控房的方式管理預約：一個商品可設定多個「服務方案」（名稱／時長／價格），客人選方案、選服務人員、選時段後才能加入購物車。僅在「加入購物車」與訂單狀態變化這幾個標準 WooCommerce 事件上串接，不影響既有結帳流程與電商模組。
- * Version:     3.2.0
- * Author:      NiBill
+ * Version:     3.2.1
+ * Author:      快捷鍵Ctrl+A
  * Author URI:  https://nibill-studio.com/
  * Text Domain: ultimate-appointments
  * Domain Path: /languages
@@ -31,7 +31,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit; // 阻擋直接存取。
 }
 
-define( 'UAPPT_VERSION', '3.2.0' );
+define( 'UAPPT_VERSION', '3.2.1' );
 // UAPPT_VERSION 與 UAPPT_DB_VERSION 刻意分開：前者每次發版都推進（也是靜態資源
 // 的快取破除鍵），後者只有真的動到資料表結構時才推。v2.18.0（批次匯入、個別
 // 撤回）沿用既有的寫入方法、v2.19.0／v2.19.1／v2.19.2（後台視覺系統、對齊修正、手機版響應式）只動
