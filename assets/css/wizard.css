@@ -1,0 +1,630 @@
+/**
+ * 前台預約精靈。
+ *
+ * 獨立於 frontend.css：那支是商品頁內嵌表單與會員中心在用的，兩邊 UI 不一樣，
+ * 共用只會讓改其中一邊時要擔心另一邊。class 一律用 .uappt-wiz- 前綴。
+ *
+ * 行動優先：這類預約流程手機佔絕大多數，桌面版只是把格子放寬。
+ *
+ * **整份檔案沒有任何寫死的顏色**（語意紅也收進變數了），全部走底下 .uappt-wiz
+ * 上的一組 CSS 變數。Elementor 元件的「配色」控制項就是直接覆寫那些變數
+ * （見 includes/elementor/class-uappt-elementor-booking.php），所以換色不必為了
+ * 每個元件另外寫選擇器，深色配色也只是換一組變數值而已。
+ *
+ * 加顏色到這支檔案時請一起遵守：先問「這是哪一個既有角色」（accent／ink／
+ * surface／surface-2／border／muted／disabled／danger），能歸就歸，真的歸不了
+ * 再開新變數——直接寫一個色碼進去，那個地方就會是下一個換不了色的破口。
+ */
+
+.uappt-wiz {
+	--uappt-wiz-accent: #b07d62;
+	--uappt-wiz-accent-ink: #fff;
+	--uappt-wiz-border: #e3e3e3;
+	--uappt-wiz-muted: #6b6b6b;
+	--uappt-wiz-disabled: #bdbdbd;
+	--uappt-wiz-radius: 10px;
+
+	/* 兩層底色。
+	   surface   ＝「可以按的東西」：卡片、時段、月曆上有位的日子、上一步。
+	   surface-2 ＝「不能按或只是襯底」：月曆沒位的日子、頭像的預設色塊。
+	   深色配色只要把這兩個換掉就成立——把它們寫死成 #fff / #f6f4f2 正是
+	   v2.69.0 之前精靈無法變深色的原因（主色改了，卡片還是一片白）。 */
+	--uappt-wiz-surface: #fff;
+	--uappt-wiz-surface-2: #f6f4f2;
+
+	/* 錯誤提示。語意色（紅）不該給使用者逐一調，但深色配色一定要跟著換——
+	   深色卡片上留一塊亮粉紅底非常突兀，所以獨立成變數，由配色預設一起帶。 */
+	--uappt-wiz-danger-bg: #fdf0f0;
+	--uappt-wiz-danger-ink: #a12b2b;
+
+	/* 人員照片圓角。預設圓形大頭貼；Elementor 元件的「人員照片形狀」控制項
+	   直接覆寫這個變數（見 class-uappt-elementor-booking.php）。 */
+	--uappt-wiz-avatar-radius: 50%;
+
+	max-width: 720px;
+	margin: 0 auto;
+
+	/* 這是整個精靈的字級基準。底下所有元件的 font-size 一律寫成 em、相對於它，
+	   所以 Elementor 的「文字排版」只要改這一個地方，整組就等比縮放。
+	   ⚠️ 新增元件時不要再寫 px 字級——寫了就等於把那一塊釘死，使用者把整體
+	   放大之後只有它沒跟上，看起來像沒對齊。註解裡的 px 是 15px 基準下的結果，
+	   方便對照。 */
+	font-size: 15px;
+	line-height: 1.5;
+
+	/* 主要文字色。刻意**不宣告** --uappt-wiz-ink 的預設值，改用 var() 的
+	   fallback：精靈原本就跟著佈景主題的內文顏色走，寫死任何灰都會讓它在某些
+	   佈景上格格不入，所以沒設定時要維持 `inherit`。
+
+	   ⚠️ 不能寫成 `--uappt-wiz-ink: inherit;` 再 `color: var(--uappt-wiz-ink)`。
+	   CSS-wide 關鍵字（inherit／initial／unset／revert）在**自訂屬性宣告**裡
+	   是特殊值：那行的意思不是「值為 inherit 這個 token」，而是「這個自訂屬性
+	   去繼承父層的同名屬性」——父層沒有，結果是 guaranteed-invalid，var() 取到
+	   空值。實測 getPropertyValue('--uappt-wiz-ink') 回傳空字串。
+	   （畫面看起來會是對的，但那是因為 color 取不到值時退回繼承值，剛好同結果。
+	   靠巧合成立的東西不能留。）
+
+	   fallback 寫在 var() 裡就沒有這個問題：沒被覆寫時整條算成 `color: inherit`。 */
+	color: var(--uappt-wiz-ink, inherit);
+}
+
+.uappt-wiz *,
+.uappt-wiz *::before,
+.uappt-wiz *::after {
+	box-sizing: border-box;
+}
+
+/* 佈景主題防禦：精靈會被放進佈景主題的內容區，而佈景主題（這裡是 Blocksy）
+   跟 WordPress 的區塊版面樣式都會對 ol/ul/p/h4 設自己的 margin。實測過
+   `.uappt-wiz-crumbs` 的 margin-bottom 被改成 0，步驟列直接貼在卡片上。
+   所以先在自己的範圍內把這些元素歸零，間距一律由底下的規則自己給——
+   而且都用 `.uappt-wiz` 開頭墊高權重，避免又被蓋回去。 */
+.uappt-wiz ol,
+.uappt-wiz ul,
+.uappt-wiz p,
+.uappt-wiz h4 {
+	margin: 0;
+	padding: 0;
+}
+
+.uappt-wiz-boot,
+.uappt-wiz-loading {
+	padding: 24px 0;
+	text-align: center;
+	color: var(--uappt-wiz-muted);
+}
+
+/* ⚠️ 底下這些元素本身是 p／h4，會被上面那段「佈景主題防禦」歸零
+   （`.uappt-wiz p` 的權重 0,1,1 高於單一 class 的 0,1,0），所以一律要用
+   `.uappt-wiz` 開頭把權重墊到 0,2,0。踩過一次：確認頁按鈕下方那行說明的
+   padding 被自己的防禦規則吃掉，間距變成 0。 */
+.uappt-wiz .uappt-wiz-error {
+	padding: 12px 14px;
+	border-radius: var(--uappt-wiz-radius);
+	background: var(--uappt-wiz-danger-bg);
+	color: var(--uappt-wiz-danger-ink);
+}
+
+.uappt-wiz .uappt-wiz-empty {
+	padding: 16px 0;
+	color: var(--uappt-wiz-muted);
+	text-align: center;
+}
+
+.uappt-wiz .uappt-wiz-hint {
+	padding: 24px 0 0;
+	color: var(--uappt-wiz-muted);
+	text-align: center;
+}
+
+/* --- 步驟指示 --- */
+
+.uappt-wiz .uappt-wiz-crumbs {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+/* 步驟列與內容之間的距離用 body 的 padding 給，不用 crumbs 的 margin：
+   padding 不會被相鄰邊界摺疊，也比較不容易被佈景主題的 margin 規則洗掉。 */
+.uappt-wiz .uappt-wiz-body {
+	padding-top: 26px;
+}
+
+.uappt-wiz-crumb {
+	flex: 1 1 0;
+	min-width: 72px;
+	padding: 7px 4px;
+	border-bottom: 2px solid var(--uappt-wiz-border);
+	color: var(--uappt-wiz-disabled);
+	font-size: 0.8667em; /* 13px */
+	text-align: center;
+	white-space: nowrap;
+}
+
+.uappt-wiz-crumb.is-done {
+	border-bottom-color: var(--uappt-wiz-accent);
+	color: var(--uappt-wiz-muted);
+	cursor: pointer;
+}
+
+.uappt-wiz-crumb.is-current {
+	border-bottom-color: var(--uappt-wiz-accent);
+	color: var(--uappt-wiz-accent);
+	font-weight: 600;
+}
+
+/* --- 卡片格 --- */
+
+.uappt-wiz-grid {
+	display: grid;
+	gap: 10px;
+}
+
+/* 手機：一列一個，橫式（頭像在左、資訊在右）。
+   平板／電腦：圓角方格。
+   手機用橫式的理由是單手拿手機時縱向掃視比較快，而且名字長一點也不會被擠成
+   兩行；方格在窄螢幕只能塞兩欄，每格都很小。 */
+.uappt-wiz-grid-staff,
+.uappt-wiz-grid-service {
+	grid-template-columns: 1fr;
+}
+
+.uappt-wiz-card {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	width: 100%;
+	padding: 12px;
+	border: 1px solid var(--uappt-wiz-border);
+	border-radius: var(--uappt-wiz-radius);
+	background: var(--uappt-wiz-surface);
+	font: inherit;
+	color: inherit;
+	text-align: left;
+	cursor: pointer;
+	transition: border-color .15s, box-shadow .15s;
+}
+
+.uappt-wiz-card:hover,
+.uappt-wiz-card:focus-visible {
+	border-color: var(--uappt-wiz-accent);
+	box-shadow: 0 0 0 1px var(--uappt-wiz-accent);
+	outline: none;
+}
+
+/* 手機預設：橫式一列。平板以上在檔案底部的 media query 改成直式方格。 */
+.uappt-wiz-card-staff {
+	flex-direction: row;
+	text-align: left;
+	gap: 12px;
+}
+
+.uappt-wiz-card-service {
+	justify-content: space-between;
+}
+
+/* 圓形大頭貼：不同長寬比的上傳照片要在卡片上等高，所以固定尺寸 + cover 裁切。
+   後台的預覽用同一套處理，管理者上傳當下就看得出人臉會不會被裁到。 */
+.uappt-wiz-avatar {
+	/* display 做成變數，是為了讓「不顯示人員照片」能在**所有寬度**生效
+	   （不像版面那兩個變數只在桌面版被讀）。沒拍照的店家，那個姓名首字的
+	   色塊其實不太好看，整個關掉會乾淨很多。
+	   用 display:none 而不是 visibility/opacity：要的是連位置都不佔，
+	   卡片才會縮成一行名字，而 flex 的 gap 只算實際存在的項目。 */
+	display: var(--uappt-wiz-avatar-display, flex);
+	align-items: center;
+	justify-content: center;
+	width: 56px;
+	height: 56px;
+	flex: 0 0 56px;
+	border-radius: var(--uappt-wiz-avatar-radius, 50%);
+	overflow: hidden;
+	/* 沒上傳照片時的色塊。原本是自己的一個暖灰 #f0ece9，跟月曆的 #f6f4f2
+	   幾乎一樣、又說不出為什麼要不一樣，併成同一個變數；併掉之後深色配色
+	   才不會漏掉這一塊（一圈亮灰浮在深色卡片上很明顯）。 */
+	background: var(--uappt-wiz-surface-2);
+	color: var(--uappt-wiz-muted);
+	font-size: 1.6em; /* 24px */
+	font-weight: 600;
+}
+
+.uappt-wiz-avatar img {
+	width: 100%;
+	height: 100%;
+	object-fit: cover;
+	display: block;
+}
+
+.uappt-wiz-card-meta {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	min-width: 0;
+}
+
+.uappt-wiz-card-service .uappt-wiz-card-meta {
+	align-items: flex-end;
+	text-align: right;
+	flex: 0 0 auto;
+}
+
+.uappt-wiz-card-name {
+	font-weight: 600;
+	overflow-wrap: anywhere;
+}
+
+.uappt-wiz-card-note,
+.uappt-wiz-card-price {
+	font-size: 0.8667em; /* 13px */
+	color: var(--uappt-wiz-muted);
+}
+
+.uappt-wiz-card-price {
+	color: inherit;
+	font-weight: 600;
+}
+
+.uappt-wiz-card-badge {
+	align-self: flex-start;
+	padding: 1px 8px;
+	border-radius: 999px;
+	background: var(--uappt-wiz-accent);
+	color: var(--uappt-wiz-accent-ink);
+	font-size: 0.8em; /* 12px */
+}
+
+/* --- 月曆 --- */
+
+.uappt-wiz-cal-nav {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+	margin-bottom: 10px;
+}
+
+.uappt-wiz-cal-prev,
+.uappt-wiz-cal-next {
+	width: 36px;
+	height: 36px;
+	border: 1px solid var(--uappt-wiz-border);
+	border-radius: 50%;
+	background: var(--uappt-wiz-surface);
+	font-size: 1.2em; /* 18px */
+	line-height: 1;
+	cursor: pointer;
+}
+
+.uappt-wiz-cal-prev:disabled {
+	color: var(--uappt-wiz-disabled);
+	cursor: not-allowed;
+}
+
+.uappt-wiz-cal-week,
+.uappt-wiz-cal-grid {
+	display: grid;
+	grid-template-columns: repeat(7, 1fr);
+	gap: 4px;
+}
+
+.uappt-wiz-cal-wd {
+	padding: 4px 0;
+	color: var(--uappt-wiz-muted);
+	font-size: 0.8em; /* 12px */
+	text-align: center;
+}
+
+.uappt-wiz-cal-cell {
+	aspect-ratio: 1;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border: 1px solid transparent;
+	border-radius: var(--uappt-wiz-radius);
+	background: var(--uappt-wiz-surface-2);
+	font: inherit;
+	color: inherit;
+	cursor: pointer;
+}
+
+.uappt-wiz-cal-cell.is-pad {
+	background: none;
+	cursor: default;
+}
+
+/* 有位／沒位一眼要分得出來：可選的有底色與邊框，不可選的整個淡掉。
+   full（有排班但約滿）跟 closed（沒排班）刻意長得一樣——對客人來說
+   都是「這天不能選」，分兩種樣式只是徒增視覺雜訊。 */
+.uappt-wiz-cal-cell.is-open {
+	border-color: var(--uappt-wiz-accent);
+	background: var(--uappt-wiz-surface);
+	font-weight: 600;
+}
+
+.uappt-wiz-cal-cell.is-full,
+.uappt-wiz-cal-cell.is-closed,
+.uappt-wiz-cal-cell.is-past,
+.uappt-wiz-cal-cell.is-beyond {
+	color: var(--uappt-wiz-disabled);
+	background: var(--uappt-wiz-surface-2);
+	cursor: not-allowed;
+}
+
+.uappt-wiz-cal-cell.is-selected {
+	background: var(--uappt-wiz-accent);
+	border-color: var(--uappt-wiz-accent);
+	color: var(--uappt-wiz-accent-ink);
+}
+
+/* --- 時段 --- */
+
+.uappt-wiz-slots {
+	margin-top: 18px;
+}
+
+.uappt-wiz .uappt-wiz-slot-group {
+	margin: 18px 0 8px;
+	font-size: 0.8667em; /* 13px */
+	color: var(--uappt-wiz-muted);
+	font-weight: 600;
+}
+
+.uappt-wiz-slot-row {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
+	gap: 8px;
+}
+
+.uappt-wiz-slot {
+	position: relative;
+	padding: 10px 6px;
+	border: 1px solid var(--uappt-wiz-border);
+	border-radius: var(--uappt-wiz-radius);
+	background: var(--uappt-wiz-surface);
+	font: inherit;
+	cursor: pointer;
+}
+
+.uappt-wiz-slot:hover,
+.uappt-wiz-slot:focus-visible {
+	border-color: var(--uappt-wiz-accent);
+	outline: none;
+}
+
+.uappt-wiz-slot-left {
+	position: absolute;
+	top: -6px;
+	right: -6px;
+	min-width: 18px;
+	padding: 0 4px;
+	border-radius: 999px;
+	background: var(--uappt-wiz-accent);
+	color: var(--uappt-wiz-accent-ink);
+	font-size: 0.7333em; /* 11px */
+	line-height: 18px;
+}
+
+/* --- 確認 --- */
+
+.uappt-wiz-confirm {
+	padding: 6px 20px 20px;
+	border: 1px solid var(--uappt-wiz-border);
+	border-radius: var(--uappt-wiz-radius);
+}
+
+.uappt-wiz-confirm-row {
+	display: flex;
+	justify-content: space-between;
+	align-items: baseline;
+	gap: 16px;
+	padding: 15px 0;
+	border-bottom: 1px solid var(--uappt-wiz-border);
+}
+
+.uappt-wiz-confirm-row:last-of-type {
+	border-bottom: none;
+}
+
+.uappt-wiz-confirm-label {
+	color: var(--uappt-wiz-muted);
+	flex: 0 0 auto;
+}
+
+.uappt-wiz-confirm-value {
+	text-align: right;
+	font-weight: 600;
+	overflow-wrap: anywhere;
+}
+
+/* 合計那列：金額是客人最在意的數字，給它比其他列更大的字級與一點呼吸空間。 */
+.uappt-wiz-confirm-row.is-total {
+	padding-top: 18px;
+}
+
+.uappt-wiz-confirm-row.is-total .uappt-wiz-confirm-value {
+	font-size: 1.3333em; /* 20px */
+	color: var(--uappt-wiz-accent);
+}
+
+.uappt-wiz-submit {
+	width: 100%;
+	margin-top: 18px;
+	padding: 13px;
+	border: none;
+	border-radius: var(--uappt-wiz-radius);
+	background: var(--uappt-wiz-accent);
+	color: var(--uappt-wiz-accent-ink);
+	font: inherit;
+	font-weight: 600;
+	cursor: pointer;
+}
+
+.uappt-wiz-submit:disabled {
+	background: var(--uappt-wiz-disabled);
+	cursor: wait;
+}
+
+/* --- 上一步 / 摘要 --- */
+
+/* 「上一步」做成低調的膠囊外框鈕：原本是一條底線文字，混在內容裡看起來像
+   沒做完的連結。次要動作不該搶走主要動作的注意力，所以只有外框、沒有填色，
+   hover 時才用主色。箭頭用 ::before 產生，JS 那邊只管文字。 */
+.uappt-wiz-back {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	margin-top: 22px;
+	padding: 9px 18px 9px 13px;
+	border: 1px solid var(--uappt-wiz-border);
+	border-radius: 999px;
+	background: var(--uappt-wiz-surface);
+	color: var(--uappt-wiz-muted);
+	font: inherit;
+	font-size: 0.9333em; /* 14px */
+	line-height: 1.2;
+	cursor: pointer;
+	transition: border-color .15s, color .15s;
+}
+
+.uappt-wiz-back::before {
+	content: '‹';
+	/* ⚠️ 這裡的 em 基準是 .uappt-wiz-back 自己（14px），不是容器的 15px——
+	   em 永遠相對於「自己算出來的父層字級」。要 18px 就是 18/14，不是 18/15。 */
+	font-size: 1.2857em; /* 18px */
+	line-height: 1;
+}
+
+.uappt-wiz-back:hover,
+.uappt-wiz-back:focus-visible {
+	border-color: var(--uappt-wiz-accent);
+	color: var(--uappt-wiz-accent);
+	outline: none;
+}
+
+.uappt-wiz-summary {
+	display: none;
+	flex-wrap: wrap;
+	gap: 6px 10px;
+	margin-top: 18px;
+	padding-top: 12px;
+	border-top: 1px solid var(--uappt-wiz-border);
+	font-size: 0.8667em; /* 13px */
+	color: var(--uappt-wiz-muted);
+}
+
+.uappt-wiz-summary.is-visible {
+	display: flex;
+}
+
+.uappt-wiz-summary-item::after {
+	content: '·';
+	margin-left: 10px;
+}
+
+.uappt-wiz-summary-item:last-child::after {
+	content: '';
+}
+
+/* 平板以上：人員改回圓角方格（頭像在上、名字在下），服務項目兩欄。
+   斷點用 768px，也就是一般認定的平板起點——手機橫放（多半 667～736px）
+   仍然走橫式一列，那時候還是單手在用，跟平板的使用姿勢不一樣。 */
+/* --- 購物車頁／結帳頁（只有預約時）---
+   這兩頁都只載入這支 CSS、不載精靈的 JS（見 UAPPT_Checkout::enqueue_style()）。
+   樣式很少，不值得為它另外開一個檔案。
+
+   class 名稱保留 `uappt-checkout-` 前綴：v2.66.0 起「返回修改預約」在購物車頁
+   也會出現，名字確實不夠精準了，但它只在本外掛內部使用，改名要同時動 PHP、
+   CSS 與任何客製樣式，換到的只有命名好看一點。 */
+.uappt-checkout-hidden {
+	display: none !important;
+}
+
+.uappt-checkout-back {
+	margin: 0 0 18px;
+}
+
+/* 空購物車的「回到預約」。按鈕外觀完全交給佈景主題（沿用它的 .button
+   class），這裡只負責跟旁邊的「回到商店」之間的距離——版型是兩個各自
+   獨立的 <p>，沒有間距的話兩顆會黏在一起。 */
+.uappt-cart-empty-back {
+	margin: 0 0 12px;
+}
+
+/* ⚠️ 這幾個值原本是把 --uappt-wiz-border／-muted／-accent 的預設值**又抄了一次**
+   （#e3e3e3／#6b6b6b／#b07d62）。改用變數＋fallback：購物車頁與結帳頁上沒有
+   `.uappt-wiz` 祖先，變數取不到、fallback 生效，外觀跟以前一模一樣；但配色只剩
+   一個地方定義，之後調預設值不會有一邊忘了改。
+
+   （這兩頁吃不到 Elementor 元件的設定是必然的——那些變數寫在 widget 自己的
+   `{{WRAPPER}} .uappt-wiz` 上，不會跨頁。要讓返回鈕也跟著換色，得把配色存成
+   全站設定再輸出，那是另一件事。） */
+.uappt-checkout-back a {
+	display: inline-flex;
+	align-items: center;
+	padding: 9px 18px;
+	border: 1px solid var(--uappt-wiz-border, #e3e3e3);
+	border-radius: 999px;
+	color: var(--uappt-wiz-muted, #6b6b6b);
+	font-size: 14px;
+	text-decoration: none;
+}
+
+.uappt-checkout-back a:hover,
+.uappt-checkout-back a:focus-visible {
+	border-color: var(--uappt-wiz-accent, #b07d62);
+	color: var(--uappt-wiz-accent, #b07d62);
+}
+
+/* ⚠️ **「每列幾張」的斷點界線刻意寫在 CSS 這邊，不是交給 Elementor 的響應式
+   控制項。**
+
+   Elementor 的響應式控制項是這樣輸出的：電腦版的值**不包 media query**（所以
+   在所有寬度都生效），平板／手機的值才各自包進 max-width 的 query 裡。而
+   Elementor 產生的選擇器是 `.elementor-element-xxx .uappt-wiz .uappt-wiz-grid-staff`
+   ——權重 0,3,0，遠高於這裡的 0,1,0，media query 本身又不加權重。結果是：
+   使用者只設了「電腦版 4 欄」，手機上也會變成 4 欄擠在一起。
+
+   所以改成「變數只在這個 query 裡被讀取」。Elementor 那邊是一個普通的下拉，
+   寫 `--uappt-wiz-staff-cols` 到 .uappt-wiz 上、不包任何 query；但因為 768px 以下
+   根本沒有人去讀這個變數，設了也不會影響手機版。斷點的定義留在元件自己手上，
+   這樣「同一個元件在兩個斷點的差異」才有單一出處。
+
+   控制項的標籤也跟著寫明「電腦版」，使用者不會以為那是全域設定。 */
+@media (min-width: 768px) {
+	.uappt-wiz-grid-staff {
+		grid-template-columns: var( --uappt-wiz-staff-cols, repeat( auto-fill, minmax( 140px, 1fr ) ) );
+	}
+
+	/* 人員卡片版面。跟上面的「每列幾張」同一個道理：變數只在這個 query 裡被
+	   讀取，所以 Elementor 那邊是個不包 media query 的普通下拉，卻只會影響
+	   桌面版。手機一律維持橫式一列——理由在檔案上方 .uappt-wiz-grid-staff 那段：
+	   單手拿手機時縱向掃視比較快，名字長一點也不會被擠成兩行；方格在窄螢幕
+	   只塞得下兩欄，每格都很小。 */
+	.uappt-wiz-card-staff {
+		flex-direction: var( --uappt-wiz-staff-dir, column );
+		text-align: var( --uappt-wiz-staff-text, center );
+		gap: var( --uappt-wiz-staff-gap, 8px );
+	}
+
+	.uappt-wiz-card-staff .uappt-wiz-card-meta {
+		align-items: var( --uappt-wiz-staff-cross, center );
+	}
+
+	.uappt-wiz-card-staff .uappt-wiz-card-badge {
+		align-self: var( --uappt-wiz-staff-cross, center );
+	}
+
+	.uappt-wiz-card-staff .uappt-wiz-avatar {
+		width: var( --uappt-wiz-avatar-size, 72px );
+		height: var( --uappt-wiz-avatar-size, 72px );
+		flex-basis: var( --uappt-wiz-avatar-size, 72px );
+	}
+
+	.uappt-wiz-grid-service {
+		grid-template-columns: var( --uappt-wiz-service-cols, repeat( 2, 1fr ) );
+	}
+}

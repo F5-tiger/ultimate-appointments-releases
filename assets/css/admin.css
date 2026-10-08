@@ -1,0 +1,5982 @@
+/**
+ * 設計 token：整個後台共用的色票、圓角、陰影、間距。
+ *
+ * 狀態色（success/warning/danger/info/muted）原本散落在 .uappt-badge-*、
+ * .uappt-tone-*、.uappt-status-bar* 三組各自獨立的規則裡，同一個「警告橘」
+ * 前後出現在四個不同的地方、寫死四次同一組 hex。集中成變數之後，那幾組
+ * 規則改成引用這裡，之後要調色只要改一個地方；新頁面（例如「今日營運」）
+ * 也直接吃同一份色票，不會長出風格不一致的新色階。
+ */
+:root {
+	/* 狀態主色：給邊框、左粗邊、圖示、實心元件用。
+	   ⚠️ **主色不可以直接放在自己的 -bg 淺底上當文字色**——實測
+	   `#e65100` on `#fff3e0` 只有 3.42:1，不符 WCAG AA（4.5:1）。
+	   淺底上的文字一律用下面那組 -ink，那組是專門為此挑的深色，
+	   實測都在 5.6–8.0:1。 */
+	--uappt-color-primary: #2271b1;
+	--uappt-color-primary-bg: #f0f6fc;
+	--uappt-color-primary-ink: #0f4c8a;
+
+	--uappt-color-success: #2e7d32;
+	--uappt-color-success-bg: #eef6ee;
+	--uappt-color-success-ink: #1e6b23;
+
+	--uappt-color-warning: #e65100;
+	--uappt-color-warning-bg: #fff3e0;
+	--uappt-color-warning-ink: #9a4a00;
+
+	--uappt-color-danger: #d63638;
+	--uappt-color-danger-bg: #fcf0f1;
+	--uappt-color-danger-ink: #b32d2e;
+
+	--uappt-color-info: #1565c0;
+	--uappt-color-info-bg: #eaf2fb;
+	--uappt-color-info-ink: #0f4c8a;
+
+	/* muted 的值從 #757b82 改成 WP 官方灰 #646970：原本它跟散落在各處寫死的
+	   #787c82 只差幾個色階、語意卻完全相同，是事實上的重複定義。 */
+	--uappt-color-muted: #646970;
+	--uappt-color-muted-bg: #f5f5f5;
+	--uappt-color-muted-ink: #50575e;
+
+	/* 「今天」「提示框」用的琥珀色。本來散在月曆與 .uappt-hint 裡各寫各的，
+	   沒有名字也就沒辦法統一調整。 */
+	--uappt-color-amber: #dba617;
+	--uappt-color-amber-bg: #fcf9e8;
+	--uappt-color-amber-ink: #7a5200;
+
+	/* 中性色：全部對齊 WordPress admin 的官方灰階，不自創色票——後台是跟
+	   側邊欄、notice、原生按鈕並排的，自己發明一套只會差半個色階，看起來
+	   像沒對齊而不是像設計。
+	   收掉的重複：文字灰原本有 #50575e/#3c434a/#787c82/#a7aaad/#555 五階
+	   互相近似，邊框灰有 #eceef0/#e2e4e7/#f2f3f4 三階，背景灰有
+	   #fafafa/#fcfcfd/#fbfbfc 三階。 */
+	--uappt-color-text: #1d2327;
+	--uappt-color-text-soft: #3c434a;
+	--uappt-color-text-muted: #646970;
+	--uappt-color-text-faint: #8c8f94;
+	--uappt-color-border: #dcdcde;
+	--uappt-color-border-subtle: #e6e7e9;
+	/* 面板／卡片外框專用，比一般邊框再深一階。值取自終極電商（twshop）的
+	   面板邊框，讓兩個外掛的卡片並排時看起來是同一個系列，見下方「跟終極
+	   電商對齊」一節。 */
+	--uappt-color-border-strong: #ccd0d4;
+	--uappt-surface: #fff;
+	--uappt-surface-subtle: #f6f7f7;
+	--uappt-surface-sunken: #f0f0f1;
+
+	/* 圓角只有三階，對應三種尺度的元件：徽章／輸入框、面板／卡片、統計卡。
+	   原本用了 2/3/4/5/8/9/10/11 八種值，卡片圓角甚至同時存在 8px 與 10px
+	   兩套，並排時看得出來不齊。
+	   md(6px) 是主力——面板、卡片、篩選列、圖示徽章都用它，跟終極電商的
+	   `.twshop-panel` 對齊；lg(8px) 只給統計卡用（同樣對齊它的 dash-stat）。 */
+	--uappt-radius-sm: 3px;
+	--uappt-radius-md: 6px;
+	--uappt-radius-lg: 8px;
+
+	--uappt-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+	--uappt-shadow-md: 0 2px 8px rgba(0, 0, 0, 0.08);
+	/* 內圈白、外圈藍，在深色與淺色底上都看得見。絕對不要用 outline: none。 */
+	--uappt-focus-ring: 0 0 0 1px var(--uappt-surface), 0 0 0 3px var(--uappt-color-primary);
+
+	--uappt-space-1: 4px;
+	--uappt-space-2: 8px;
+	--uappt-space-3: 12px;
+	--uappt-space-4: 16px;
+	--uappt-space-5: 24px;
+	--uappt-space-6: 32px;
+}
+
+/* --- 頁面說明文字 ---
+   標題底下那句「這一頁是做什麼的」。刻意比欄位說明再大一階，因為它是給
+   第一次進來的人看的，欄位說明則是需要時才讀。 */
+.uappt-page-desc {
+	max-width: 46em;
+	margin: var(--uappt-space-1) 0 var(--uappt-space-4);
+	color: var(--uappt-color-text-muted);
+	font-size: 13px;
+	line-height: 1.6;
+}
+
+/* 沒有子頁籤的區塊（目前只有回訪管理）：說明區塊直接接在區塊導覽底下，只剩
+   自己那 4px，**比它自己兩段之間的 16px 還窄**——一個區塊對外的距離小於它
+   對內的距離，就會被讀成上面那排頁籤的一部分，而不是一段獨立的說明。
+   有子頁籤的頁面不需要這條，子頁籤自己的下方留白已經把距離拉開了；用
+   :has() 判斷而不是相鄰選擇器，是因為 WordPress 會把通知訊息插進
+   `.wp-header-end` 後面，相鄰關係隨時會被一則「已儲存」打斷。 */
+.uappt-wrap:not(:has(> .uappt-settings-tabs)) > .uappt-page-desc:first-of-type {
+	margin-top: var(--uappt-space-5);
+}
+
+/* 說明區塊 → 篩選列：說明講完了才輪到操作，兩者之間要跟其他區塊同一個節奏
+   （24px），不然說明的最後一行跟篩選列的輸入框會黏成一團。 */
+.uappt-page-desc + .uappt-filters {
+	margin-top: var(--uappt-space-5);
+}
+
+/* --- 資料表 ---
+   WP 的 .widefat 是 border-collapse: collapse，做不出圓角容器（改成
+   separate 會引發整張表雙線邊框的連鎖問題），所以柔化的重點放在表頭、
+   列分隔線與內距，不去動邊框模型。 */
+.uappt-wrap .uappt-table {
+	margin-top: var(--uappt-space-4);
+	margin-bottom: var(--uappt-space-5);
+	/* 邊框跟面板同一階，表格與卡片並排時外框粗細才一致。陰影刻意不設：
+	   WP 的 .widefat 本來就有一層很淡的陰影，再疊一層我們自己的會比旁邊的
+	   面板（無陰影）浮得更高。 */
+	border-color: var(--uappt-color-border-strong);
+}
+
+/* 左右內距必須跟 tbody 的儲存格用同一個值：WP 的 .widefat th 是 8px 10px，
+   而下面 tbody 給的是 10px 12px，只設上下內距的話欄位標題會比它底下那一整欄
+   的值往左偏 2px——每一張表、每一欄都偏，是「看起來沒對齊」最普遍的來源。 */
+.uappt-wrap .uappt-table thead th,
+.uappt-wrap .uappt-table thead td,
+.uappt-wrap .uappt-table tfoot th,
+.uappt-wrap .uappt-table tfoot td {
+	padding: var(--uappt-space-2) var(--uappt-space-3);
+	background: var(--uappt-surface-sunken);
+	border-bottom: 1px solid var(--uappt-color-border);
+	color: var(--uappt-color-text-soft);
+	font-size: 12px;
+	font-weight: 600;
+}
+
+.uappt-wrap .uappt-table tbody td,
+.uappt-wrap .uappt-table tbody th {
+	padding: 10px var(--uappt-space-3);
+	border-top: 1px solid var(--uappt-color-border-subtle);
+	vertical-align: middle;
+}
+
+.uappt-wrap .uappt-table tbody tr:first-child > td,
+.uappt-wrap .uappt-table tbody tr:first-child > th {
+	border-top: none;
+}
+
+/* 勾選欄不吃上面那組內距，不然核取方塊會被推到離左緣很遠的地方。 */
+.uappt-wrap .uappt-table .check-column {
+	width: 2.2em;
+	padding-left: var(--uappt-space-2);
+	padding-right: 0;
+	vertical-align: middle;
+}
+
+/* **斑馬紋關掉。** 表格裡本來就有狀態徽章、連結、操作列這些高對比元素，
+   再疊一層交錯底色只會把畫面弄花——排班申請頁還有表中表，兩層交錯疊在
+   一起完全看不出哪一列屬於哪一層。改用髮絲線分隔 + hover highlight，
+   掃視速度反而更快，也正好對應「不要眼花撩亂」這個目標。
+   用特異性壓過 WP 的 .striped，不新增 !important。
+   ⚠️ 這裡原本寫「全檔維持既有的 3 個（方案表格兩個內距 + jQuery UI
+   sortable 的 placeholder）」，但服務方案改成卡片式之後，表格本身連同
+   那兩個內距 !important 一起被拿掉了，這句話沒有跟著更新，變成假資訊。
+   目前檔案裡實際的 !important 是另外兩個：手機版 select2 的
+   `max-width`、商品層級「可服務的人員」欄位的 `padding-left`，都是為了
+   蓋過 WooCommerce／select2 自己寫死優先權的樣式，位置見各自的說明。 */
+.uappt-wrap .uappt-table.striped > tbody > tr:nth-child(odd),
+.uappt-wrap .uappt-table > tbody > tr.alternate {
+	background: transparent;
+}
+
+/* ⚠️ hover 一定要把上面那條「關掉斑馬紋」的選擇器一起列進來。
+   `:nth-child(odd)` 算一個 class 特異性，關斑馬紋那條是 (0,4,0)，而單寫
+   `.uappt-wrap .uappt-table > tbody > tr:hover` 只有 (0,3,0)——輸給它的結果是
+   **奇數列（第 1、3、5…列）永遠不會有 hover 高亮，只有偶數列會亮**。
+   全站每一張 .uappt-table 都掛 .striped，所以每一頁都中這個獎。 */
+.uappt-wrap .uappt-table > tbody > tr:hover,
+.uappt-wrap .uappt-table.striped > tbody > tr:nth-child(odd):hover,
+.uappt-wrap .uappt-table > tbody > tr.alternate:hover {
+	background: var(--uappt-color-primary-bg);
+}
+
+/* 表中表（排班申請的逐日明細）：不該再有自己的外框與陰影，否則展開區看起來
+   像另一張獨立的表格浮在上面，而不是同一張表的細節。 */
+.uappt-wrap .uappt-table .uappt-table,
+.uappt-wrap .uappt-table .widefat {
+	margin: var(--uappt-space-2) 0 0;
+	border-left: none;
+	border-right: none;
+	border-bottom: none;
+	box-shadow: none;
+}
+
+/* clear 不是裝飾：WP 核心的 .subsubsub（檢視頁籤）是 float: left，而 flex
+   容器會自己閃開浮動元素，篩選列與狀態快捷連結因此會被吸到頁籤右邊、跟頁籤
+   擠在同一行，基線還差一截。清掉浮動它們才會各自成一列。 */
+.uappt-filters {
+	clear: both;
+	margin: var(--uappt-space-4) 0;
+	padding: var(--uappt-space-3);
+	/* 淺灰條而不是白卡：下面接著的資料表就是白底，篩選列再用白色會跟表格
+	   黏成一整片、分不出這是兩個不同的東西。 */
+	background: var(--uappt-surface-subtle);
+	border: 1px solid var(--uappt-color-border-subtle);
+	border-radius: var(--uappt-radius-md);
+}
+
+/* 桌面版：一整排，跟 v2.51.0 之前一樣。每一格（.uappt-field）本身也是 flex，
+   欄位名稱藏起來，所以視覺上就是「控制項一個接一個排開」。 */
+.uappt-filters-grid {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: var(--uappt-space-2);
+}
+
+.uappt-field {
+	display: flex;
+	align-items: center;
+	gap: var(--uappt-space-1);
+}
+
+/* 日期區間那一格裡面是「輸入框 ～ 輸入框」。 */
+.uappt-field-row {
+	display: flex;
+	align-items: center;
+	gap: var(--uappt-space-1);
+}
+
+.uappt-field-sep {
+	color: var(--uappt-color-text-muted);
+}
+
+/* 欄位名稱在桌面版不顯示，但**留在無障礙樹裡**（不能用 display: none）：
+   桌面版的一整排有上下文，「所有人員」旁邊就是「所有狀態」，看得出這排在
+   做什麼；螢幕閱讀器沒有這個上下文，所以名稱要唸得到。
+   手機版會把它改回看得見的樣子（見 782px 斷點）。 */
+.uappt-field-label {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	margin: -1px;
+	padding: 0;
+	overflow: hidden;
+	clip-path: inset(50%);
+	border: 0;
+	white-space: nowrap;
+}
+
+/* 收合開關與它的標題只在手機版存在。桌面版連同 checkbox 一起藏掉，內容就
+   永遠是展開的——這是刻意不用 <details> 的原因，關著的 details 沒辦法用 CSS
+   打開。
+   ⚠️ 選擇器要帶上 `input[type="checkbox"]`：WP 的 forms.css 在 782px 以下有
+   `input[type=checkbox] { display: inline-block; width: 1.5625rem }`，那是
+   (0,1,1)，單寫 `.uappt-filters-toggle` 是 (0,1,0) 會輸，開關會變成一個 25px
+   的空方塊浮在標題上面。同一個坑 .uappt-toggle 已經踩過一次。 */
+.uappt-filters input[type="checkbox"].uappt-filters-toggle,
+.uappt-filters label.uappt-filters-summary {
+	display: none;
+}
+
+/* 欄位裡的 label 是「文字＋輸入框」（勾選項那種），預設 baseline 對齊會讓
+   輸入框跟前面的文字差半個字高，改成整組垂直置中。
+   ⚠️ 限定在 .uappt-field 之內。寫成 `.uappt-filters label` 的話會連收合標題
+   （也是 <label>）一起吃到，而那條是 (0,1,1)、比上面關掉標題的
+   `.uappt-filters-summary` (0,1,0) 更具體——結果桌面版會冒出一行
+   「篩選條件」。 */
+.uappt-filters .uappt-field label {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--uappt-space-1);
+	color: var(--uappt-color-text-soft);
+}
+
+.uappt-bulk-toolbar {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: var(--uappt-space-2);
+	margin: var(--uappt-space-2) 0 var(--uappt-space-4);
+}
+
+/* --- 兩層導覽：比照終極電商（twshop）的無框線底線頁籤（v2.54.0）---
+
+   兩層的分工不變，仍然是「最外層 nav-tab-wrapper、內層 subsubsub」——那是
+   WooCommerce 設定頁自己的分工，終極電商繞了五個版本（v25.8.81～88）才回到
+   同一個結論。這次改的是**外觀**：把 WP 原生那種一顆一顆的方塊頁籤換成終極
+   電商在用的無框線樣式（底線標示目前所在），兩個外掛並排在同一個 wp-admin
+   裡時才看得出是同一個系列。
+
+   數值直接對齊 twshop-admin.css：13px/500 的灰字、24px 間距、目前所在是 2px
+   的主色底線，容器自己有一條底線讓那 2px 壓在上面。 */
+.uappt-wrap .nav-tab-wrapper.uappt-section-nav {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--uappt-space-5);
+	margin: var(--uappt-space-4) 0 0;
+	padding: 9px 0 0;
+	border: 0;
+	border-bottom: 1px solid var(--uappt-color-border);
+}
+
+.uappt-wrap .uappt-section-nav .nav-tab {
+	float: none;
+	margin: 0;
+	padding: 0 0 10px;
+	border: 0;
+	border-radius: 0;
+	background: transparent;
+	color: var(--uappt-color-text-muted);
+	font-size: 13px;
+	font-weight: 500;
+	line-height: 20px;
+	text-decoration: none;
+}
+
+.uappt-wrap .uappt-section-nav .nav-tab:hover,
+.uappt-wrap .uappt-section-nav .nav-tab:focus {
+	color: var(--uappt-color-primary);
+	box-shadow: none;
+}
+
+/* 焦點框用 outline 而不是 box-shadow：底線頁籤沒有自己的邊框，box-shadow 會
+   糊在文字周圍看不出範圍。offset 讓框離開文字一點。 */
+.uappt-wrap .uappt-section-nav .nav-tab:focus-visible {
+	outline: 2px solid var(--uappt-color-primary);
+	outline-offset: 3px;
+	box-shadow: none;
+}
+
+/* 目前所在：2px 主色底線 ＋ 深色字。margin-bottom: -1px 讓它蓋住容器那條
+   1px 的底線，看起來是「這一段的線被點亮了」而不是多出一條。 */
+.uappt-wrap .uappt-section-nav .nav-tab.nav-tab-active,
+.uappt-wrap .uappt-section-nav .nav-tab.nav-tab-active:hover,
+.uappt-wrap .uappt-section-nav .nav-tab.nav-tab-active:focus {
+	margin-bottom: -1px;
+	border-bottom: 2px solid var(--uappt-color-primary);
+	background: transparent;
+	color: var(--uappt-color-text);
+}
+
+/* 區塊導覽的紅點徽章（人員的待審排班、顧客的待回訪、耗材的低量）。
+   `UAPPT_Admin::badge_html()` 沿用的是 WP 核心「待審留言」那組 class
+   （`.awaiting-mod` / `.pending-count`），但核心的樣式規則寫在
+   `#adminmenu .awaiting-mod`——**只認左側選單這個容器**，離開 `#adminmenu`
+   就完全沒有樣式，數字會變成貼在頁籤文字後面的一串裸字（例如「人員管理 2」）。
+   這裡照抄核心那份數值，只是把容器換成我們自己的 `.uappt-section-nav`。 */
+.uappt-section-nav .awaiting-mod {
+	display: inline-block;
+	vertical-align: top;
+	box-sizing: border-box;
+	margin: 1px 0 -1px 4px;
+	padding: 0 5px;
+	min-width: 18px;
+	height: 18px;
+	border-radius: 9px;
+	background-color: #d63638;
+	color: #fff;
+	font-size: 11px;
+	line-height: 1.6;
+	text-align: center;
+}
+
+/* --- 內層子頁籤（掛在 WP 原生的 ul.subsubsub 上）---
+   純文字＋豎線，跟上面那排底線頁籤形狀天生不同，一眼分得出誰包含誰。
+
+   ⚠️ 上疏下密是錯的，這裡刻意**上緊下鬆**：子頁籤屬於上面那排區塊導覽的同一
+   群組，底下才是內容。等距的話（原本上下都是 12px）它會跟內容裡第一排小字
+   連結（例如報表的期間快捷鍵，同樣是 13px 的文字連結）讀起來像兩排平輩，
+   看不出誰是導覽誰是內容。 */
+.uappt-wrap .subsubsub.uappt-settings-tabs {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	float: none;
+	margin: var(--uappt-space-2) 0 var(--uappt-space-5);
+	padding: 0;
+	line-height: 26px;
+}
+
+/* ⚠️ render_tabs() 在子頁籤後面印的 `<br class="clear">` 是 WordPress 浮動版面
+   的遺留（subsubsub 原本是 float）。子頁籤改成 flex 之後它只剩一行空白，疊在上面
+   刻意設的 24px 下外距底下，變成 46～66px 的空帶——比其他沒有子頁籤的頁面
+   （區塊導覽 → 內容 24px）寬了一倍多（v2.96.1 全面檢查時量到）。 */
+.uappt-wrap .uappt-settings-tabs + br.clear {
+	display: none;
+}
+
+.uappt-wrap .uappt-settings-tabs > li {
+	display: inline-flex;
+	align-items: center;
+	float: none;
+	margin: 0;
+}
+
+/* 豎線由 CSS 產生而不是寫在標記裡（render_tabs() 已經拿掉了），手機版才能
+   換成間距——見 782px 斷點。 */
+.uappt-wrap .uappt-settings-tabs > li:not(:last-child)::after {
+	content: "|";
+	margin: 0 var(--uappt-space-1);
+	color: var(--uappt-color-primary);
+}
+
+.uappt-wrap .uappt-settings-tabs a {
+	padding: 0;
+	line-height: 26px;
+}
+
+.uappt-settings-tabs .current {
+	color: var(--uappt-color-primary-ink);
+	font-weight: 600;
+}
+
+/* 頁籤面板的顯示／隱藏。
+
+   ⚠️ 被藏起來的頁籤內容**仍然留在 DOM 裡，也仍然會跟著表單送出**，這是刻意
+   的：UAPPT_Admin::handle_save_settings() 會無條件寫入每一個 option，欄位沒送
+   上來就寫入預設值。所以「只印出目前這一頁的欄位」會變成按一次儲存就把其他
+   三個頁籤的設定全部悄悄重設掉。
+
+   is-active 由 PHP 印出來（不是等 JS 跑完才加），否則整頁會先把四個頁籤的內容
+   全部閃出來再收起來。
+
+   前面掛 .uappt-wrap 是因為「測試發送」那塊的容器本身就是
+   <form class="uappt-form uappt-tab-pane">，單一 class 的選擇器會跟 .uappt-form
+   的規則打平手、靠檔案順序決勝負。 */
+.uappt-wrap .uappt-tab-pane {
+	display: none;
+}
+
+.uappt-wrap .uappt-tab-pane.is-active {
+	display: block;
+}
+
+/* --- 區塊卡片（比照終極電商 twshop 的 .twshop-panel）---
+   兩個外掛的後台會並排出現在同一個 wp-admin 裡，卡片長得不一樣會讓人覺得
+   是兩個不相干的東西。這裡對齊它的實際數值：6px 圓角、`#ccd0d4` 邊框、
+   **不加陰影**、標題列用 `#f6f7f7` 灰底橫條 ＋ 22×22 圖示徽章。
+
+   刻意**只對齊視覺特徵，不抄它的實作**：twshop 沒有 token 系統（35 個寫死
+   hex、8 種圓角、間距全憑手感），我們保留自己這套 token，只是把值調成一致。
+   這樣兩邊看起來同一家族，但我們這邊之後要改色只要動一個地方。
+
+   這個元件最早只用在「今日營運」（叫 .uappt-dash-panel），階段 1 一般化成
+   .uappt-panel 給所有頁面用、舊名暫時當別名，階段 5 已經把別名移除，現在
+   全站只有這一個名字。 */
+.uappt-panel {
+	background: var(--uappt-surface);
+	border: 1px solid var(--uappt-color-border-strong);
+	border-radius: var(--uappt-radius-md);
+	/* 沒有陰影是刻意的：twshop 的面板是純邊框，加了陰影兩邊並排就會看出
+	   我們的卡片「浮」得比較高。 */
+	overflow: hidden;
+}
+
+/* 標題列：灰底橫條，是「看起來像終極電商」最關鍵的一個特徵，比顏色更決定
+   辨識度。用 flex 讓圖示、標題、右側動作按鈕自然排開。 */
+.uappt-panel-head {
+	display: flex;
+	align-items: center;
+	gap: var(--uappt-space-3);
+	padding: 14px 20px;
+	background: var(--uappt-surface-subtle);
+	border-bottom: 1px solid var(--uappt-color-border-strong);
+}
+
+.uappt-panel-head h2,
+.uappt-panel-head h3 {
+	margin: 0;
+	padding: 0;
+	font-size: 13px;
+	line-height: 1.5;
+}
+
+/* 動作按鈕靠右，跟 twshop 的 `.twshop-panel-head .button` 同樣處理。 */
+.uappt-panel-head .button {
+	margin-left: auto;
+	font-weight: normal;
+}
+
+/* 圖示徽章：22×22 淺藍底圓角方塊，裡面放 Lucide 線條 SVG。
+   `stroke: currentColor` 讓 SVG 跟著文字色走，不用替每個圖示各寫一次顏色。 */
+.uappt-panel-head-icon {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	flex: 0 0 auto;
+	width: 22px;
+	height: 22px;
+	border-radius: var(--uappt-radius-md);
+	background: var(--uappt-color-primary-bg);
+	color: var(--uappt-color-primary);
+}
+
+.uappt-panel-head-icon svg {
+	width: 13px;
+	height: 13px;
+	stroke: currentColor;
+}
+
+.uappt-panel-body {
+	padding: 20px;
+}
+
+/* 連續兩段 body 之間用細線分隔，不必各自變成獨立卡片。 */
+.uappt-panel-body + .uappt-panel-body {
+	border-top: 1px solid var(--uappt-color-border-subtle);
+}
+
+.uappt-panel-body > :first-child {
+	margin-top: 0;
+}
+
+.uappt-panel-body > :last-child {
+	margin-bottom: 0;
+}
+
+.uappt-panel > h2:first-child,
+.uappt-panel > h3:first-child {
+	margin-top: 0;
+}
+
+/* --- 表單頁的卡片化（設定／手動建立預約／人員編輯）---
+   這三頁的 HTML 是「<h2> 標題 → <table class="form-table"> 欄位 → <hr>」
+   一路平鋪到底，是整個後台最「生硬」的地方。這裡用相鄰選擇器把 h2 跟緊接
+   在後面的 form-table 黏成一張卡片（h2 當卡片頂、table 當卡片底），
+   **完全不用改 PHP**。
+   用 :has() 判斷「這個 h2 後面真的有 form-table 嗎」，否則沒有表格跟著的
+   h2 會變成一個有頂沒底的斷頭卡片。前台 CSS 已經在用 :has()，相依性一致。 */
+/* 表單頁限寬：一行文字拉到 1400px 寬會很難讀，眼睛掃到行尾找不到下一行的
+   開頭。960px 是終極電商 `.twshop-admin-wrap` 的寬度，沿用同一個尺度。
+   用 :has() 認出「這一頁的主體是表單」，不用在每個 view 加 class；**刻意
+   只套表單頁**——預約列表有九個欄位、日檢視是按人員分欄的時間軸，限寬會
+   讓它們變得更難用。 */
+.uappt-wrap:has(> .uappt-form) {
+	max-width: 960px;
+}
+
+/* ⚠️ 這裡**不能**用 padding 撐出卡片內距：WP 的 .form-table 是
+   border-collapse: collapse，而 CSS 規範明訂這種情況下 table 元素自己的
+   padding 會被忽略——`getComputedStyle` 仍然會回報你設的值（所以量「計算值」
+   驗不出來，要量實際幾何），但畫面上標題會直接貼齊卡片邊框。內距一律加在
+   底下的 th／td 儲存格上。 */
+.uappt-form > .form-table {
+	margin-top: var(--uappt-space-5);
+	background: var(--uappt-surface);
+	border: 1px solid var(--uappt-color-border-strong);
+	border-radius: var(--uappt-radius-md);
+}
+
+/* h2 直接當成面板的標題列：灰底橫條、13px、下方細線，跟 .uappt-panel-head
+   長得一樣。這樣設定頁與人員編輯頁不用改 PHP 就有跟終極電商一致的外觀。 */
+.uappt-form > h2:has(+ .form-table) {
+	margin: var(--uappt-space-5) 0 0;
+	padding: 14px 20px;
+	background: var(--uappt-surface-subtle);
+	border: 1px solid var(--uappt-color-border-strong);
+	border-bottom: none;
+	border-radius: var(--uappt-radius-md) var(--uappt-radius-md) 0 0;
+	font-size: 13px;
+	line-height: 1.5;
+}
+
+.uappt-form > h2 + .form-table {
+	margin-top: 0;
+	border-top: 1px solid var(--uappt-color-border-strong);
+	border-top-left-radius: 0;
+	border-top-right-radius: 0;
+}
+
+/* 分組已經由卡片邊界表達出來了，原本用來分段的 <hr> 就變成多餘的雜訊。 */
+.uappt-form > hr {
+	display: none;
+}
+
+/* 卡片的左右內距做在儲存格上（理由見上面 .uappt-form > .form-table 的說明）：
+   第一欄補左內距、最後一欄補右內距，中間維持欄與欄的間隔。 */
+/* 左右內距用 20px，跟 .uappt-panel-body 與終極電商的 `.twshop-panel-body`
+   同一個值，兩邊的卡片內容才會對在同一條垂直線上。 */
+.uappt-wrap .form-table th {
+	width: 200px;
+	padding: var(--uappt-space-3) var(--uappt-space-3) var(--uappt-space-3) 20px;
+	color: var(--uappt-color-text);
+	vertical-align: top;
+}
+
+.uappt-wrap .form-table td {
+	padding: var(--uappt-space-3) 20px var(--uappt-space-3) 0;
+}
+
+/* 面板裡直接放 form-table（不再包一層 .uappt-panel-body）：卡片內距由儲存格
+   自己提供，包 body 會變成 20px + 20px 的雙重內距。 */
+.uappt-panel > .form-table {
+	margin: 0;
+}
+
+/* 頭尾兩列多給一點垂直呼吸空間，卡片上下才不會顯得緊繃。 */
+.uappt-form > .form-table > tbody > tr:first-child > th,
+.uappt-form > .form-table > tbody > tr:first-child > td,
+.uappt-panel > .form-table > tbody > tr:first-child > th,
+.uappt-panel > .form-table > tbody > tr:first-child > td {
+	padding-top: 18px;
+}
+
+.uappt-form > .form-table > tbody > tr:last-child > th,
+.uappt-form > .form-table > tbody > tr:last-child > td,
+.uappt-panel > .form-table > tbody > tr:last-child > th,
+.uappt-panel > .form-table > tbody > tr:last-child > td {
+	padding-bottom: 18px;
+}
+
+/* 面板之間的垂直節奏。只挑「直接放在頁面或表單裡」的面板，grid 容器裡的
+   面板（例如批次匯入那兩欄）自己用 gap，吃到 margin 會變成雙重間距。 */
+.uappt-wrap > .uappt-panel,
+/* 設定頁把面板包進頁籤容器之後，就不再是 form 的直接子元素了。 */
+.uappt-tab-pane > .uappt-panel,
+.uappt-form > .uappt-panel {
+	margin-top: var(--uappt-space-5);
+}
+
+/* panel-body 後面接 form-table 時（說明區塊在上、欄位在下）要有分隔線，
+   不然兩段會黏成一片。 */
+.uappt-panel-body + .form-table {
+	border-top: 1px solid var(--uappt-color-border-subtle);
+}
+
+/* 直接放在面板裡的狀態框（設定頁的 LINE 狀態）自己就是一個有邊框的盒子，
+   不需要再包一層 .uappt-panel-body——那會變成框中框。這裡補上等同 body 的
+   內距，讓它跟下面 form-table 的欄位對在同一條垂直線上。 */
+.uappt-panel > .uappt-line-status {
+	margin: 20px;
+}
+
+.uappt-panel > .uappt-line-status + .form-table {
+	border-top: 1px solid var(--uappt-color-border-subtle);
+}
+
+/* --- 面板內的元素 ---
+   人員編輯頁的「逐日調整」「時段佔用」是「說明 → 既有清單 → 新增表單」三段
+   合成一個主題，全部放在同一個面板裡。以下讓這些元素在面板內不要各自再畫
+   一圈外框。 */
+
+/* 清單表格：左右與底部的外框由面板提供，表格只留上緣那條分隔線。 */
+.uappt-panel > .uappt-table {
+	margin: 0;
+	border-left: none;
+	border-right: none;
+	border-bottom: none;
+	box-shadow: none;
+}
+
+/* 表格自己的 12px 儲存格內距，跟標題列與 form-table 的 20px 不是同一條垂直
+   線——同一張卡片裡「標題在 20px、表格第一欄在 12px」，一眼就看得出沒對齊。
+   只補頭尾兩欄，中間維持欄與欄的間隔。用子選擇器一路指定到 tr，排班申請的
+   表中表才不會被連坐。 */
+.uappt-wrap .uappt-panel > .uappt-table > thead > tr > :first-child,
+.uappt-wrap .uappt-panel > .uappt-table > tbody > tr > :first-child,
+.uappt-wrap .uappt-panel > .uappt-table > tfoot > tr > :first-child {
+	padding-left: 20px;
+}
+
+.uappt-wrap .uappt-panel > .uappt-table > thead > tr > :last-child,
+.uappt-wrap .uappt-panel > .uappt-table > tbody > tr > :last-child,
+.uappt-wrap .uappt-panel > .uappt-table > tfoot > tr > :last-child {
+	padding-right: 20px;
+}
+
+/* 清單直接放在面板裡（不包 .uappt-panel-body）：清單項目自己已經有上下內距，
+   再包一層 body 會多一段縮排。這裡只補左右，hover 高亮才會是整條橫幅。
+   左右給 16px 而不是 20px，是因為 .uappt-dash-list a 自己還有 4px 的左右內距
+   （hover 高亮要比文字寬一點才像一條橫幅）：16 + 4 = 20，文字最後落在跟標題
+   列同一條垂直線上。 */
+.uappt-panel > .uappt-dash-list {
+	padding: var(--uappt-space-2) var(--uappt-space-4) var(--uappt-space-3);
+}
+
+/* 「今天請假」「今天沒有排班」這兩段補充資訊也是直接放在面板裡，但它們沒有
+   自己的內距——結果整段貼齊卡片左邊框，最後那排人名徽章還直接壓在卡片底緣
+   上（面板是 overflow: hidden，看起來就是「內容凸出卡片」）。 */
+.uappt-panel > .uappt-dash-sublabel,
+.uappt-panel > .uappt-dash-tags {
+	padding-left: 20px;
+	padding-right: 20px;
+}
+
+.uappt-panel > .uappt-dash-tags:last-child {
+	padding-bottom: 20px;
+}
+
+.uappt-panel > .description {
+	margin: 0;
+	padding: 20px;
+}
+
+/* 面板裡的表單直接放 form-table，內距一樣由儲存格提供。 */
+.uappt-panel > form > .form-table {
+	margin: 0;
+}
+
+/* submit_button() 輸出的是 <p class="submit">，在面板裡要自己補內距，
+   不然按鈕會貼在卡片底緣。 */
+.uappt-panel .submit {
+	margin: 0;
+	padding: 0 20px 20px;
+}
+
+/* 窄數字欄位（報名人數、提醒時數這類），取代散在 view 裡的 style="width:6em"。 */
+.uappt-input-num {
+	width: 6em;
+}
+
+/* 金額欄位。刻意比 .uappt-input-num 寬：六位數加小數點在 6em 裡會被瀏覽器的
+   數字微調鈕壓到看不見完整數字。 */
+.uappt-input-amount {
+	width: 9em;
+}
+
+/* --- 報表的每日走勢（v2.25.0） ---
+   刻意用純 CSS 長條，不引入圖表套件：這裡只要回答「哪幾天比較旺、哪幾天是
+   空的」，一排高低不同的長條就夠了，為此多載一個 JS 套件（還要處理它的無障礙
+   與列印）不划算。確切數字靠 title 屬性與「每日」頁籤。 */
+.uappt-trend {
+	display: flex;
+	align-items: flex-end;
+	gap: 2px;
+	height: 140px;
+	/* 一個月 31 根放得下，一年 366 根就要捲——寧可捲也不要把長條壓成 1px。 */
+	overflow-x: auto;
+	padding-bottom: 4px;
+}
+.uappt-trend-bar {
+	display: flex;
+	flex-direction: column;
+	justify-content: flex-end;
+	align-items: center;
+	flex: 1 0 14px;
+	height: 100%;
+	gap: 2px;
+}
+.uappt-trend-fill {
+	width: 100%;
+	min-height: 2px;
+	background: var( --uappt-color-primary );
+	border-radius: 2px 2px 0 0;
+}
+.uappt-trend-label {
+	font-size: 10px;
+	line-height: 1;
+	color: var( --uappt-color-text-faint );
+}
+
+/* 合計列：數字要跟上面的資料列區隔開，不然一眼看不出哪一列是總數。 */
+.uappt-table tfoot th {
+	border-top: 2px solid var( --uappt-color-border-strong );
+	font-weight: 600;
+}
+
+/* --- 報表第二版：期間快捷、與上期比較、佔比長條（v2.27.0） --- */
+
+/* 快捷鍵是一排連結按鈕，不是表單欄位——按一下就換期間，不用再按「套用」。 */
+.uappt-period-presets {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	flex-wrap: wrap;
+	margin: 12px 0 8px;
+}
+.uappt-period-presets-label {
+	color: var( --uappt-color-text-muted );
+	font-size: 13px;
+	margin-right: 2px;
+}
+
+.uappt-compare-toggle {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	white-space: nowrap;
+}
+
+/* 與上期的變化。顏色是「好／壞」不是「漲／跌」——未到率下降是好事，所以
+   is-up／is-down 由呼叫端依指標方向決定，不是照箭頭方向。 */
+.uappt-delta {
+	display: inline-block;
+	margin-left: 4px;
+	font-size: 11px;
+	font-weight: 600;
+	white-space: nowrap;
+}
+.uappt-delta.is-up {
+	color: var( --uappt-color-success-ink );
+}
+.uappt-delta.is-down {
+	color: var( --uappt-color-danger-ink );
+}
+.uappt-delta.is-flat {
+	color: var( --uappt-color-text-faint );
+}
+
+/* 「佔該人員業績」的長條：不用讀數字就看得出他主要在做什麼。長條墊在文字
+   後面（absolute），所以再長也不會把欄寬撐開。 */
+.uappt-share {
+	position: relative;
+	display: block;
+	min-width: 5em;
+	padding: 2px 0;
+}
+.uappt-share-bar {
+	position: absolute;
+	left: 0;
+	top: 0;
+	bottom: 0;
+	background: color-mix( in srgb, var( --uappt-color-primary ) 18%, transparent );
+	border-radius: 2px;
+}
+.uappt-share-text {
+	position: relative;
+}
+
+/* 人員 × 項目的可折疊區塊。 */
+.uappt-staff-services {
+	border-top: 1px solid var( --uappt-color-border-subtle );
+}
+.uappt-staff-services > summary {
+	display: flex;
+	align-items: baseline;
+	gap: 10px;
+	flex-wrap: wrap;
+	padding: 10px 20px;
+	cursor: pointer;
+}
+.uappt-staff-services > summary::marker {
+	color: var( --uappt-color-text-faint );
+}
+.uappt-staff-services-summary {
+	color: var( --uappt-color-text-muted );
+	font-size: 13px;
+}
+.uappt-staff-services .uappt-table {
+	border-left: 0;
+	border-right: 0;
+}
+
+/* --- 零售對服務比的長條（v2.29.0） ---
+   一條兩色的橫條比兩個百分比數字更快看出「產品佔了多少」。純 CSS，沿用
+   「不為了這種圖多載一個 JS 套件」的既有判斷。 */
+.uappt-ratio-bar {
+	display: flex;
+	height: 20px;
+	margin: 4px 0 12px;
+	border-radius: 4px;
+	overflow: hidden;
+	background: var( --uappt-color-border-subtle );
+}
+.uappt-ratio-service {
+	background: var( --uappt-color-primary );
+}
+.uappt-ratio-product {
+	background: var( --uappt-color-amber );
+}
+
+/* --- 人員報表：可排序表頭、異常標示（v2.31.0） --- */
+
+.uappt-wrap .uappt-table thead th a {
+	display: inline-flex;
+	align-items: center;
+	gap: 3px;
+	color: inherit;
+	text-decoration: none;
+}
+.uappt-wrap .uappt-table thead th a:hover {
+	color: var( --uappt-color-primary );
+}
+.uappt-sort-arrow {
+	font-size: 9px;
+	color: var( --uappt-color-text-faint );
+}
+.uappt-wrap .uappt-table thead th.is-sorted {
+	background: var( --uappt-color-primary-bg );
+}
+.uappt-wrap .uappt-table thead th.is-sorted .uappt-sort-arrow {
+	color: var( --uappt-color-primary );
+}
+
+/* 異常標示。用淡底色而不是紅字——紅字在一整欄數字裡反而不明顯，而且「偏離
+   平均」是「值得看一眼」不是「出事了」，用警示紅會過度。 */
+.uappt-wrap .uappt-table td.is-flag-warn {
+	background: var( --uappt-color-warning-bg );
+	font-weight: 600;
+	cursor: help;
+}
+
+/* --- 預約報表：時段熱度與分布長條（v2.30.0） --- */
+
+/* 時段矩陣。欄數是營業時段的長度（通常 10–14 欄），窄螢幕靠外層捲動，
+   不要把格子壓到看不見數字。 */
+.uappt-heat-wrap {
+	overflow-x: auto;
+	padding-bottom: 4px;
+}
+.uappt-heat {
+	border-collapse: separate;
+	border-spacing: 2px;
+	font-size: 12px;
+}
+.uappt-heat th {
+	color: var( --uappt-color-text-muted );
+	font-weight: 600;
+	text-align: center;
+	padding: 2px 4px;
+	white-space: nowrap;
+}
+.uappt-heat tbody th {
+	text-align: right;
+	padding-right: 6px;
+}
+.uappt-heat td {
+	width: 34px;
+	height: 28px;
+	text-align: center;
+	border-radius: 3px;
+	background: var( --uappt-color-muted-bg );
+	color: var( --uappt-color-text-soft );
+}
+
+/* 熱度階梯。跟「本月明細」的月曆刻意用不同色系（那邊是紫、講「這天忙不忙」），
+   這裡用藍——同一份報表裡兩張圖問的是不同問題，顏色一樣會讓人以為可以互相
+   對照。深到 is-heat-4 仍然是深色文字可讀，不必換白字。 */
+.uappt-heat td.is-heat-0 { background: #f6f7f7; color: var( --uappt-color-text-faint ); }
+.uappt-heat td.is-heat-1 { background: #e7f0f8; }
+.uappt-heat td.is-heat-2 { background: #c9dff2; }
+.uappt-heat td.is-heat-3 { background: #a3c9e8; }
+.uappt-heat td.is-heat-4 { background: #7bb0dc; }
+
+.uappt-cal-legend-swatch.is-heat-0 { background: #f6f7f7; }
+.uappt-cal-legend-swatch.is-heat-1 { background: #e7f0f8; }
+.uappt-cal-legend-swatch.is-heat-2 { background: #c9dff2; }
+.uappt-cal-legend-swatch.is-heat-3 { background: #a3c9e8; }
+.uappt-cal-legend-swatch.is-heat-4 { background: #7bb0dc; }
+
+/* 分布長條（取消前置時間、預約前置期共用）。 */
+.uappt-subhead {
+	margin: 16px 0 8px;
+	font-size: 13px;
+	color: var( --uappt-color-text-soft );
+}
+.uappt-bars {
+	list-style: none;
+	margin: 0 0 8px;
+	padding: 0;
+}
+.uappt-bar-row {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	margin-bottom: 4px;
+	font-size: 13px;
+}
+.uappt-bar-label {
+	flex: 0 0 10em;
+	color: var( --uappt-color-text-soft );
+}
+.uappt-bar-track {
+	flex: 1 1 auto;
+	height: 14px;
+	border-radius: 3px;
+	background: var( --uappt-color-muted-bg );
+	overflow: hidden;
+}
+.uappt-bar-fill {
+	display: block;
+	height: 100%;
+	background: var( --uappt-color-primary );
+}
+.uappt-bar-value {
+	flex: 0 0 9em;
+	color: var( --uappt-color-text-muted );
+	text-align: right;
+	white-space: nowrap;
+}
+
+/* 手機版把長條改成兩行：標籤與數值同一行分立兩端，軌道整行獨佔（v2.58.0）。
+
+   原本只是把標籤與數值的 flex-basis 從 10em/9em 縮成 7em/7em，但那不夠：
+   375px 的畫面實測下來標籤 91px ＋ 數值 138px（「NT$168,000（33.9%）」本身
+   就有 138px，`white-space: nowrap` 讓它不肯再縮），軌道只剩 **72px**。
+   72px 的長條沒有辦法表達比例——33.9% 與 13.6% 畫出來差不到 15px，這張圖
+   存在的唯一理由就沒了。
+   桌面版維持一行三欄，那裡寬度夠，橫向對齊比較好比較。 */
+@media ( max-width: 782px ) {
+	.uappt-bar-row {
+		flex-wrap: wrap;
+		gap: 2px 10px;
+		margin-bottom: 10px;
+	}
+	.uappt-bar-label {
+		flex: 1 1 auto;
+	}
+	.uappt-bar-value {
+		flex: 0 0 auto;
+	}
+	/* 軌道獨佔第二行。
+	   ⚠️ 光是 `flex: 0 0 100%` 不夠——DOM 順序是 標籤→軌道→數值，換行後會
+	   變成三行（標籤 / 軌道 / 數值），數值跟它描述的標籤被軌道隔開。要
+	   `order: 1` 把軌道排到最後，第一行才會是「標籤　　　數值」。 */
+	.uappt-bar-track {
+		order: 1;
+		flex: 0 0 100%;
+		height: 10px;
+	}
+}
+
+/* --- 回訪管理（v2.28.0） --- */
+
+/* 已經聯絡過的（只有勾「連最近聯絡過的一起顯示」時才看得到）淡化，跟還沒打的
+   分開——不然掃視時會分不出哪幾列是待辦的。 */
+.uappt-row-snoozed {
+	opacity: 0.6;
+}
+
+.uappt-customer-link {
+	margin-left: 6px;
+	font-size: 12px;
+}
+
+/* 備註欄 + 按鈕排成一列，不然表格會被撐得很高。 */
+.uappt-contact-form {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	flex-wrap: wrap;
+}
+.uappt-contact-note {
+	width: 12em;
+}
+
+/* --- 耗材管理（v2.24.0） --- */
+
+/* 庫存為負數＝扣用扣過頭了（帳沒跟上實際），要一眼看得出來該去盤點。 */
+.uappt-text-error {
+	color: var( --uappt-color-danger-ink );
+}
+
+/* 清單頁每一列的「數量 + 進貨 + 報廢」擠在一格裡，預設 block 會疊成三行、
+   把表格撐得很高。 */
+.uappt-inline-move {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	flex-wrap: wrap;
+}
+.uappt-inline-move .uappt-input-num {
+	margin: 0;
+}
+
+/* --- 說明文字降噪 ---
+   設定頁與人員編輯頁有大量三到五行的說明，平鋪起來跟欄位標題搶注意力，是
+   「眼花撩亂」的主因之一。縮小、淡化、限寬之後它退到背景，需要時才讀得到，
+   但資訊一個字都沒少。中文在 12px 需要 1.6 以上的行高才不會擠成一團。 */
+.uappt-wrap .description,
+.uappt-wrap p.description {
+	max-width: 46em;
+	color: var(--uappt-color-text-muted);
+	font-size: 12px;
+	line-height: 1.6;
+}
+
+/* --- 設定頁的 LINE 狀態列 --- */
+.uappt-line-status {
+	max-width: 46em;
+	margin: var(--uappt-space-3) 0;
+	padding: var(--uappt-space-3) var(--uappt-space-4);
+	background: var(--uappt-surface-subtle);
+	border: 1px solid var(--uappt-color-border-subtle);
+	border-radius: var(--uappt-radius-md);
+}
+
+.uappt-line-status p {
+	margin: 0 0 var(--uappt-space-1);
+}
+
+.uappt-line-status p:last-child {
+	margin-bottom: 0;
+}
+
+/* --- 焦點樣式 ---
+   鍵盤操作時看得見自己在哪一格。只用 :focus-visible，滑鼠點擊不會觸發。 */
+.uappt-wrap a:focus-visible,
+.uappt-wrap button:focus-visible,
+.uappt-wrap input:focus-visible,
+.uappt-wrap select:focus-visible,
+.uappt-wrap textarea:focus-visible {
+	box-shadow: var(--uappt-focus-ring);
+	outline: 2px solid transparent;
+}
+
+/* 說明文字不設上限時會一路拉到螢幕右緣，在寬螢幕上變成一條又細又長、跟按鈕
+   黏在一起的字串。給它一個換行寬度，窄一點的視窗則整段掉到下一行。 */
+.uappt-bulk-toolbar .description {
+	flex: 1 1 24em;
+	min-width: 0;
+	max-width: 60em;
+	color: var(--uappt-color-text-muted);
+}
+
+/* --- 後台表單（form-table）共同的寬度與行內排列 ---
+   欄位說明**不再限寬 46em**。那個上限是階段 1 訂的，當時表單頁還沒限寬，說明
+   文字真的會一路橫跨整個螢幕；階段 2 之後表單頁已經被 `.uappt-wrap:has(> .uappt-form)`
+   壓在 960px 內，欄位那一欄最寬也只有 629px（12px 字約 52 字元），本來就在好讀
+   的範圍。這時再壓一層 46em（552px）只會讓每一段說明都比它所屬的欄位窄 77px，
+   卡片裡因此出現一條對不齊的參差右緣——限寬的責任交給卡片，說明文字跟著欄位走。 */
+.uappt-wrap .form-table td .description {
+	max-width: none;
+}
+
+/* 同一個道理也適用在面板說明段落（每週營業時間／時段分類／逐日調整／時段
+   佔用這幾個面板開頭的介紹文字）：它們是直接放在 .uappt-panel-body 或
+   .uappt-panel 裡，不是 form-table 的儲存格，上面那條選不到它們，結果它們
+   仍然吃到最前面的 46em 通用上限。人員編輯頁的面板寬度撐到 918px 時，
+   說明文字被鎖在 552–580px，右側空出 338–366px——跟欄位說明是同一個
+   「限寬的人不是限寬的責任方」問題，補齊同一組選擇器。
+   ⚠️ 這裡故意寫三層選擇器（.uappt-wrap + .uappt-panel-body/​.uappt-panel + 子層
+   組合器），确保特異性穩穩大於上面 `.uappt-wrap .description`（兩層）—
+   `.uappt-panel > .description` 那條舊規則就是特異性打平、位置卻在通用規則
+   前面才被吃掉，不能再犯同一種錯。 */
+.uappt-wrap .uappt-panel-body > .description,
+.uappt-wrap .uappt-panel > .description {
+	max-width: none;
+}
+
+/* LINE 狀態列（.uappt-line-status）自己已經是 46em 的盒子，裡面的說明文字
+   不需要再疊一層 46em——兩個 46em 算出來的 px 並不相等（外層盒子用繼承來
+   的字級換算，內層說明文字已經被上面那條通用規則降到 12px），實測差了
+   48px，說明文字比盒子窄一截、右邊留白。盒子本身已經是限寬的責任方。 */
+.uappt-wrap .uappt-line-status > .description {
+	max-width: none;
+}
+
+/* 一組上下堆疊的選項是用 `<label>…</label><br />` 串起來的，行與行之間只剩
+   line-height，兩個勾選框上下擠在一起、看不出是兩個獨立選項。給第二個之後的
+   選項補一段上內距——**必須改成 inline-block**，純行內元素吃不到垂直外距。 */
+.uappt-wrap .form-table td > br + label {
+	display: inline-block;
+	margin-top: var(--uappt-space-2);
+}
+
+/* 欄位值後面接一顆行內按鈕（例如「立即發送提醒」）時用這個，不要靠 inline
+   表單加 margin-left 硬推——那樣按鈕與文字是各自的基線，高度一差就歪。 */
+.uappt-field-inline {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: var(--uappt-space-3);
+}
+
+.uappt-field-inline form {
+	margin: 0;
+}
+
+.uappt-time-input {
+	width: 5.5em;
+	text-align: center;
+}
+
+.uappt-segments-table {
+	border-collapse: collapse;
+	margin-bottom: var(--uappt-space-2);
+}
+
+.uappt-segments-table th,
+.uappt-segments-table td {
+	padding: var(--uappt-space-2) var(--uappt-space-3) var(--uappt-space-2) 0;
+	text-align: left;
+	vertical-align: middle;
+}
+
+.uappt-segments-table .regular-text {
+	width: 14em;
+}
+
+.uappt-boundary-mirror {
+	display: inline-block;
+	min-width: 4em;
+	color: var(--uappt-color-text-muted);
+}
+
+.uappt-hint {
+	max-width: 46em;
+	padding: var(--uappt-space-2) var(--uappt-space-3);
+	background: var(--uappt-color-amber-bg);
+	border-left: 4px solid var(--uappt-color-amber);
+	border-radius: 0 var(--uappt-radius-sm) var(--uappt-radius-sm) 0;
+	color: var(--uappt-color-amber-ink);
+}
+
+/* 面板之後的提示框（耗材庫存頁最底下那段「結存快照」的說明）。
+   `p.description` 自己只有 12px 上下外距，而這一頁上面每一段的節奏都是 24px
+   ——整頁到最後突然縮成一半，看起來像被擠在頁尾，而不是一個獨立的區塊。 */
+.uappt-wrap .uappt-panel + .uappt-hint {
+	margin-top: var(--uappt-space-5);
+}
+
+/* 提示框 → 它所描述的那顆按鈕。兩者是一組，所以刻意比上面那 24px 近一階，
+   但 12px 會讓按鈕直接黏在框線上；最後再補一段下方留白，不然整頁會結束在
+   按鈕的下緣上。 */
+.uappt-wrap .uappt-hint + form {
+	margin-top: var(--uappt-space-4);
+	margin-bottom: var(--uappt-space-5);
+}
+
+#uappt-copy-first-day {
+	margin-bottom: var(--uappt-space-2);
+}
+
+/* --- 狀態徽章：柔和色調（淺底 + 同色系深字）---
+   原本是飽和實心底配白字。單獨看很清楚，但預約列表一頁二十列並排時，整個
+   畫面會變成一片彩色積木牆，反而蓋過真正要看的內容（客人、時段）。
+   改成淺底深字之後安靜很多，狀態還是一眼分得出來。
+
+   ⚠️ 文字色一律用 -ink，不可以用主色：主色放在自己的淺底上多半不到
+   WCAG AA（實測 warning 只有 3.42:1）。-ink 那組實測都在 5.6–8.0:1。
+
+   邊框是必要的，不是裝飾：淺底對白色表格背景只有 1.1–1.2 的對比，沒有
+   邊框根本看不出這是一個「標籤」。color-mix 取主色 32% 調白，剛好是能看見
+   邊界又不搶戲的濃度；前面那行 border 是舊瀏覽器的 fallback。 */
+.uappt-badge {
+	display: inline-block;
+	padding: 2px 8px;
+	border: 1px solid var(--uappt-color-border);
+	border-radius: var(--uappt-radius-sm);
+	color: var(--uappt-color-text-muted);
+	font-size: 12px;
+	font-weight: 600;
+	line-height: 1.5;
+	/* 徽章永遠不斷行：中文沒有詞界，欄位一窄「已逾時釋放」就會被拆成一個字
+	   一行的直排色塊，整列跟著被撐高。表格擠的時候該讓欄位橫向捲，不是把
+	   狀態標籤壓成豆腐乾。 */
+	white-space: nowrap;
+}
+
+/* 日曆方塊裡的徽章：月曆格只有一百多 px 寬，跟表格用同一個尺寸會佔掉整格。 */
+.uappt-badge.is-compact {
+	padding: 1px 5px;
+	font-size: 11px;
+}
+
+.uappt-badge-success {
+	background: var(--uappt-color-success-bg);
+	border-color: color-mix(in srgb, var(--uappt-color-success) 32%, #fff);
+	color: var(--uappt-color-success-ink);
+}
+
+.uappt-badge-warning {
+	background: var(--uappt-color-warning-bg);
+	border-color: color-mix(in srgb, var(--uappt-color-warning) 32%, #fff);
+	color: var(--uappt-color-warning-ink);
+}
+
+.uappt-badge-muted {
+	background: var(--uappt-color-muted-bg);
+	border-color: var(--uappt-color-border);
+	color: var(--uappt-color-muted-ink);
+}
+
+.uappt-badge-info {
+	background: var(--uappt-color-info-bg);
+	border-color: color-mix(in srgb, var(--uappt-color-info) 32%, #fff);
+	color: var(--uappt-color-info-ink);
+}
+
+.uappt-badge-error {
+	background: var(--uappt-color-danger-bg);
+	border-color: color-mix(in srgb, var(--uappt-color-danger) 32%, #fff);
+	color: var(--uappt-color-danger-ink);
+}
+
+/* 預約列表的狀態快捷連結（帶筆數）。跟 .uappt-badge-* 共用同一份色票，
+   數字用一般文字色，避免整排都是彩色方塊看不出重點。 */
+.uappt-status-links {
+	clear: both;
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: var(--uappt-space-1) var(--uappt-space-4);
+	margin: var(--uappt-space-3) 0 var(--uappt-space-2);
+}
+
+.uappt-status-link {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--uappt-space-1);
+	text-decoration: none;
+	font-weight: 600;
+}
+
+.uappt-status-link.is-current {
+	text-decoration: underline;
+}
+
+/* --- 日曆檢視：月版面 --- */
+.uappt-calendar-nav {
+	display: flex;
+	align-items: center;
+	gap: var(--uappt-space-4);
+	margin: var(--uappt-space-2) 0 var(--uappt-space-4);
+}
+
+.uappt-calendar-month-label {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--uappt-space-2);
+	font-size: 1.25em;
+}
+
+.uappt-calendar-nav-buttons {
+	display: flex;
+	gap: var(--uappt-space-1);
+}
+
+.uappt-month-grid {
+	display: grid;
+	grid-template-columns: repeat(7, minmax(120px, 1fr));
+	gap: 1px;
+	background: var(--uappt-color-border-subtle);
+	border: 1px solid var(--uappt-color-border-subtle);
+	border-radius: var(--uappt-radius-lg);
+	/* 7 欄 × 最小 120px 排死板，容器窄於 ~850px 就會超版。跟日檢視每人員一欄
+	   同一個道理，改成讓格子自己變成橫向捲動容器；不特別挑一個斷點寬度，
+	   因為寬螢幕上內容本來就不會超出，overflow-x: auto 不會出現捲軸，
+	   跟原本 overflow: hidden 視覺上沒有差別（圓角一樣被裁得出來），只有
+	   真的超出容器寬度時才會生效——比挑一個特定斷點數字更不會漏掉中間寬度
+	   的裝置（例如平板橫向）。 */
+	overflow-x: auto;
+	overflow-y: hidden;
+	-webkit-overflow-scrolling: touch;
+	box-shadow: var(--uappt-shadow-sm);
+}
+
+.uappt-month-weekday {
+	padding: var(--uappt-space-2);
+	background: var(--uappt-surface-subtle);
+	color: var(--uappt-color-text-soft);
+	font-weight: 600;
+	text-align: center;
+}
+
+.uappt-month-cell {
+	display: flex;
+	flex-direction: column;
+	gap: var(--uappt-space-1);
+	min-height: 118px;
+	padding: var(--uappt-space-2);
+	background: var(--uappt-surface);
+}
+
+.uappt-month-cell.is-weekend {
+	background: var(--uappt-surface-subtle);
+}
+
+.uappt-month-cell.is-outside {
+	background: var(--uappt-surface-subtle);
+}
+
+.uappt-month-cell.is-outside .uappt-month-cell-date a {
+	color: var(--uappt-color-text-faint);
+}
+
+.uappt-month-cell.is-today {
+	background: var(--uappt-color-amber-bg);
+	box-shadow: inset 0 0 0 2px var(--uappt-color-amber);
+}
+
+.uappt-month-cell-date {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--uappt-space-1);
+	margin-bottom: 2px;
+	font-weight: 600;
+}
+
+.uappt-month-cell-date a {
+	color: inherit;
+	text-decoration: none;
+}
+
+.uappt-month-cell-date a:hover {
+	text-decoration: underline;
+}
+
+.uappt-month-cell.is-today .uappt-month-cell-date a {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-width: 22px;
+	height: 22px;
+	padding: 0 var(--uappt-space-1);
+	border-radius: 999px;
+	background: var(--uappt-color-amber);
+	color: var(--uappt-surface);
+}
+
+.uappt-month-cell-count {
+	min-width: 18px;
+	padding: 0 var(--uappt-space-1);
+	border-radius: 999px;
+	background: var(--uappt-surface-sunken);
+	color: var(--uappt-color-text-muted);
+	font-size: 11px;
+	font-weight: 600;
+	text-align: center;
+}
+
+.uappt-month-item {
+	display: block;
+	overflow: hidden;
+	padding: 3px var(--uappt-space-1);
+	border-left: 3px solid var(--uappt-color-muted);
+	border-radius: var(--uappt-radius-sm);
+	background: var(--uappt-color-muted-bg);
+	color: var(--uappt-color-text);
+	font-size: 11px;
+	line-height: 1.4;
+	text-decoration: none;
+	white-space: nowrap;
+	text-overflow: ellipsis;
+}
+
+a.uappt-month-item:hover {
+	filter: brightness(0.96);
+	color: var(--uappt-color-text);
+}
+
+.uappt-month-item.is-block {
+	border-left-color: var(--uappt-color-text-soft);
+	background: repeating-linear-gradient(
+		135deg,
+		var(--uappt-color-border-subtle),
+		var(--uappt-color-border-subtle) 5px,
+		var(--uappt-surface-sunken) 5px,
+		var(--uappt-surface-sunken) 10px
+	);
+	color: var(--uappt-color-text-soft);
+	cursor: default;
+}
+
+.uappt-month-item-time {
+	margin-right: var(--uappt-space-1);
+	font-weight: 600;
+	font-variant-numeric: tabular-nums;
+}
+
+.uappt-month-more {
+	padding: 2px var(--uappt-space-1);
+	color: var(--uappt-color-primary-ink);
+	font-size: 11px;
+	font-weight: 600;
+	text-decoration: none;
+}
+
+.uappt-month-more:hover {
+	text-decoration: underline;
+}
+
+.uappt-month-item-staff {
+	opacity: 0.7;
+	font-weight: 400;
+}
+
+/* 人力資源編輯頁：24 小時營業勾選後隱藏的每週營業時間區塊由 JS 加上 inline
+   style="display:none"，這裡不需要額外的 CSS 規則。 */
+
+/* --- 日曆檢視：日版面（按人員分欄，v2.4.0 重寫） ---
+   座標系：固定 00:00–24:00，所有位置都是 calc(分鐘/60 * --uappt-hour-h)。
+   舊版用百分比，而時間軸容器（含 32px corner）與欄位容器（不含表頭）的高度基準
+   不一樣，整條時間軸會系統性位移；而且 23 小時被壓進 480px，半小時的預約只有
+   10px 高、文字被裁掉。改成固定每小時高度之後，時間軸與欄位共用同一個單位，
+   結構上就不可能再對不齊。 */
+.uappt-day {
+	--uappt-hour-h: 56px;
+	--uappt-axis-w: 68px;
+	/* 這個區域變數保留（日檢視內部到處在用），但值改成指向全域 token，
+	   不要再自己養一套邊框灰。 */
+	--uappt-day-border: var(--uappt-color-border-subtle);
+
+	position: relative;
+	max-height: 72vh;
+	overflow: auto;
+	border: 1px solid var(--uappt-day-border);
+	border-radius: var(--uappt-radius-lg);
+	background: var(--uappt-surface);
+	box-shadow: var(--uappt-shadow-sm);
+}
+
+.uappt-day-grid {
+	display: grid;
+	grid-template-columns: var(--uappt-axis-w) repeat(var(--uappt-cols), minmax(170px, 1fr));
+	grid-template-rows: auto 1fr;
+	min-width: fit-content;
+}
+
+/* 左上角：同時黏在上邊與左邊，捲動時才不會露出底下的內容。 */
+.uappt-day-corner {
+	position: sticky;
+	top: 0;
+	left: 0;
+	z-index: 4;
+	height: 40px;
+	background: var(--uappt-surface-subtle);
+	border-right: 1px solid var(--uappt-day-border);
+	border-bottom: 1px solid var(--uappt-day-border);
+}
+
+.uappt-day-colhead {
+	position: sticky;
+	top: 0;
+	z-index: 3;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: var(--uappt-space-1);
+	height: 40px;
+	padding: 0 var(--uappt-space-2);
+	background: var(--uappt-surface-subtle);
+	border-bottom: 1px solid var(--uappt-day-border);
+	border-right: 1px solid var(--uappt-day-border);
+	overflow: hidden;
+	font-weight: 600;
+	white-space: nowrap;
+}
+
+.uappt-day-colhead-name {
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+/* 當天預約筆數。這是**藥丸**，圓角不可以吃卡片那組 token——radius-lg 之後
+   若再被調整（實際發生過：對齊終極電商時從 10px 改成 8px），藥丸就會變成
+   圓角方塊。999px 讓它不管高度怎麼變都還是藥丸。
+   跟月曆的 .uappt-month-cell-count、「今天」圓圈是同一個道理。 */
+.uappt-day-colhead-count {
+	flex: 0 0 auto;
+	/* border-box 讓 min-width 是「整顆徽章」的最小寬度而不是文字區的最小寬度
+	   ——沒有它，20px 的下限會再加上左右內距，一個位數的數字會撐成 36px 寬的
+	   長橢圓。加上之後單一位數剛好是 20×20 的圓形，兩位數以上才往外長。 */
+	box-sizing: border-box;
+	min-width: 20px;
+	padding: 1px var(--uappt-space-1);
+	border-radius: 999px;
+	background: var(--uappt-color-primary);
+	color: var(--uappt-surface);
+	font-size: 11px;
+	line-height: 1.6;
+	font-weight: 600;
+	text-align: center;
+}
+
+.uappt-day-colhead-cap {
+	flex: 0 0 auto;
+	color: var(--uappt-color-text-muted);
+	font-size: 11px;
+	font-weight: 400;
+}
+
+/* 時間軸：橫向捲動時黏在左邊，欄位再多也看得到時間。 */
+.uappt-day-axis {
+	position: sticky;
+	left: 0;
+	z-index: 2;
+	height: calc(24 * var(--uappt-hour-h));
+	background: var(--uappt-surface-subtle);
+	border-right: 1px solid var(--uappt-day-border);
+}
+
+.uappt-day-axis-label {
+	position: absolute;
+	left: 0;
+	right: 0;
+	padding-right: var(--uappt-space-2);
+	transform: translateY(-50%);
+	color: var(--uappt-color-text-muted);
+	font-size: 11px;
+	font-variant-numeric: tabular-nums;
+	text-align: right;
+}
+
+.uappt-day-col {
+	position: relative;
+	height: calc(24 * var(--uappt-hour-h));
+	border-right: 1px solid var(--uappt-day-border);
+	/* 空白處可點擊直接跳到「手動建立預約」，見 assets/js/admin-calendar.js。 */
+	cursor: pointer;
+}
+
+.uappt-day-col:hover {
+	background: rgba(34, 113, 177, 0.035);
+}
+
+.uappt-day-col:last-child {
+	border-right: none;
+}
+
+.uappt-day-col .uappt-day-block,
+.uappt-day-col .uappt-day-off {
+	/* 方塊與非營業時段灰底本身不是「空白處」，維持各自原本的游標樣式，
+	   不要被父層的 pointer 蓋過去。 */
+	cursor: default;
+}
+
+.uappt-day-col a.uappt-day-block {
+	cursor: pointer;
+}
+
+/* 不在班的時段 */
+.uappt-day-off {
+	position: absolute;
+	left: 0;
+	right: 0;
+	background: repeating-linear-gradient(
+		135deg,
+		var(--uappt-surface-subtle),
+		var(--uappt-surface-subtle) 6px,
+		var(--uappt-color-border-subtle) 6px,
+		var(--uappt-color-border-subtle) 12px
+	);
+}
+
+.uappt-day-line {
+	position: absolute;
+	left: 0;
+	right: 0;
+	border-top: 1px solid var(--uappt-surface-sunken);
+	pointer-events: none;
+}
+
+.uappt-day-line.is-major {
+	border-top-color: var(--uappt-color-border);
+}
+
+/* 現在時間 */
+.uappt-day-now {
+	position: absolute;
+	left: 0;
+	right: 0;
+	z-index: 2;
+	border-top: 2px solid var(--uappt-color-danger);
+	pointer-events: none;
+}
+
+.uappt-day-now::before {
+	content: "";
+	position: absolute;
+	top: -5px;
+	left: -1px;
+	width: var(--uappt-space-2);
+	height: var(--uappt-space-2);
+	border-radius: 50%;
+	background: var(--uappt-color-danger);
+}
+
+/* 預約方塊 */
+.uappt-day-block {
+	position: absolute;
+	z-index: 1;
+	/* ⚠️ 一定要 border-box。方塊的定位是 `left: calc(N * 欄寬% + 4px)`＋
+	   `width: calc(欄寬% - 8px)`（見 calendar-day.php 的 $left_css／$width_css），
+	   算式已經自己扣掉了左右各 4px 的溝縫。content-box 之下那個 width 只是
+	   內容寬，瀏覽器還會再往外加 4+4 的內距與 3px 的左粗邊——每個方塊都比
+	   自己的軌道寬 3px，最右邊那個再加上 4px 的左位移，等於凸出欄位 7px、
+	   壓到隔壁人員的欄位上。 */
+	box-sizing: border-box;
+	display: flex;
+	flex-direction: column;
+	gap: 1px;
+	overflow: hidden;
+	padding: var(--uappt-space-1);
+	border-left: 3px solid var(--uappt-color-muted);
+	border-radius: var(--uappt-radius-md);
+	background: var(--uappt-color-muted-bg);
+	color: var(--uappt-color-text);
+	font-size: 11px;
+	line-height: 1.35;
+	text-decoration: none;
+	box-shadow: var(--uappt-shadow-sm);
+	transition: box-shadow 0.12s ease, transform 0.12s ease;
+}
+
+.uappt-day-block:hover,
+.uappt-day-block:focus {
+	z-index: 3;
+	box-shadow: var(--uappt-shadow-md);
+	transform: translateY(-1px);
+	color: var(--uappt-color-text);
+}
+
+/* 使用者若在系統層關掉了動態效果，就不要位移——這種微動畫對前庭系統敏感
+   的人是會不舒服的，而它本來就只是錦上添花。 */
+@media (prefers-reduced-motion: reduce) {
+	.uappt-day-block {
+		transition: none;
+	}
+
+	.uappt-day-block:hover,
+	.uappt-day-block:focus {
+		transform: none;
+	}
+}
+
+.uappt-day-block-time {
+	font-weight: 600;
+	font-variant-numeric: tabular-nums;
+	white-space: nowrap;
+}
+
+.uappt-day-block-name {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.uappt-day-block-customer {
+	opacity: 0.75;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.uappt-day-block-flag {
+	margin-left: var(--uappt-space-1);
+	padding: 0 var(--uappt-space-1);
+	border-radius: var(--uappt-radius-sm);
+	background: var(--uappt-color-warning);
+	color: var(--uappt-surface);
+	font-size: 10px;
+	font-weight: 600;
+}
+
+.uappt-day-block.is-pending {
+	border-left-style: dashed;
+}
+
+/* 狀態色（日／月檢視方塊與圖例共用，跟 .uappt-badge-* / .uappt-status-bar*
+   同一份 token）。結構本來就是「淺底 + 左粗邊」，已經是柔和語言，這次只把
+   文字色一併換成 -ink，讓方塊裡的字跟徽章有一致的深度。 */
+.uappt-tone-success {
+	border-left-color: var(--uappt-color-success);
+	background: var(--uappt-color-success-bg);
+	color: var(--uappt-color-success-ink);
+}
+
+.uappt-tone-warning {
+	border-left-color: var(--uappt-color-warning);
+	background: var(--uappt-color-warning-bg);
+	color: var(--uappt-color-warning-ink);
+}
+
+.uappt-tone-muted {
+	border-left-color: var(--uappt-color-muted);
+	background: var(--uappt-color-muted-bg);
+	color: var(--uappt-color-muted-ink);
+}
+
+.uappt-tone-info {
+	border-left-color: var(--uappt-color-info);
+	background: var(--uappt-color-info-bg);
+	color: var(--uappt-color-info-ink);
+}
+
+.uappt-tone-error {
+	border-left-color: var(--uappt-color-danger);
+	background: var(--uappt-color-danger-bg);
+	color: var(--uappt-color-danger-ink);
+}
+
+/* 方塊本身是 <a> 時，WP 的連結藍會蓋過 tone 的文字色，這裡拉回來。 */
+a.uappt-day-block.uappt-tone-success,
+a.uappt-month-item.uappt-tone-success {
+	color: var(--uappt-color-success-ink);
+}
+
+a.uappt-day-block.uappt-tone-warning,
+a.uappt-month-item.uappt-tone-warning {
+	color: var(--uappt-color-warning-ink);
+}
+
+a.uappt-day-block.uappt-tone-muted,
+a.uappt-month-item.uappt-tone-muted {
+	color: var(--uappt-color-muted-ink);
+}
+
+a.uappt-day-block.uappt-tone-info,
+a.uappt-month-item.uappt-tone-info {
+	color: var(--uappt-color-info-ink);
+}
+
+a.uappt-day-block.uappt-tone-error,
+a.uappt-month-item.uappt-tone-error {
+	color: var(--uappt-color-danger-ink);
+}
+
+/* 時段佔用：訓練／休息／現場客人吃掉的人力，不是客人的預約，用斜線底紋區分。 */
+.uappt-day-block.is-block {
+	border-left-color: var(--uappt-color-text-soft);
+	background: repeating-linear-gradient(
+		135deg,
+		var(--uappt-color-border-subtle),
+		var(--uappt-color-border-subtle) 5px,
+		var(--uappt-surface-sunken) 5px,
+		var(--uappt-surface-sunken) 10px
+	);
+	color: var(--uappt-color-text-soft);
+	cursor: default;
+	box-shadow: none;
+}
+
+.uappt-day-block.is-block:hover {
+	transform: none;
+	box-shadow: none;
+}
+
+/* 圖例 */
+.uappt-day-legend {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--uappt-space-4);
+	margin-top: var(--uappt-space-3);
+	color: var(--uappt-color-text-muted);
+	font-size: 12px;
+}
+
+.uappt-day-legend-item {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--uappt-space-1);
+}
+
+.uappt-swatch {
+	display: inline-block;
+	width: 12px;
+	height: 12px;
+	border-left-width: 3px;
+	border-left-style: solid;
+	border-radius: var(--uappt-radius-sm);
+}
+
+.uappt-swatch-block {
+	border-left-color: var(--uappt-color-text-soft);
+	background: repeating-linear-gradient(
+		135deg,
+		var(--uappt-color-border-subtle),
+		var(--uappt-color-border-subtle) 3px,
+		var(--uappt-surface-sunken) 3px,
+		var(--uappt-surface-sunken) 6px
+	);
+}
+
+.uappt-swatch-off {
+	border-left-color: var(--uappt-color-border);
+	background: repeating-linear-gradient(
+		135deg,
+		var(--uappt-surface-subtle),
+		var(--uappt-surface-subtle) 3px,
+		var(--uappt-color-border-subtle) 3px,
+		var(--uappt-color-border-subtle) 6px
+	);
+}
+
+.uappt-product-type-list {
+	max-height: 220px;
+	overflow-y: auto;
+	margin: var(--uappt-space-2) 0 var(--uappt-space-4);
+	padding: var(--uappt-space-2) var(--uappt-space-4);
+	background: var(--uappt-surface);
+	border: 1px solid var(--uappt-color-border);
+	border-radius: var(--uappt-radius-md);
+	list-style: disc;
+}
+
+/* 訂單編輯頁：商品項目下方的預約連結 */
+.uappt-order-booking-link {
+	margin: var(--uappt-space-1) 0 0;
+	color: var(--uappt-color-text-muted);
+	font-size: 0.9em;
+}
+
+/* --- 商品編輯頁：預約設定頂部狀態列 --- */
+.uappt-status-bar {
+	margin: 0 var(--uappt-space-3) var(--uappt-space-4);
+	padding: var(--uappt-space-3);
+	background: var(--uappt-surface-subtle);
+	border-left: 4px solid var(--uappt-color-muted);
+	border-radius: 0 var(--uappt-radius-sm) var(--uappt-radius-sm) 0;
+}
+.uappt-status-bar.uappt-status-success {
+	border-left-color: var(--uappt-color-success);
+	background: var(--uappt-color-success-bg);
+}
+.uappt-status-bar.uappt-status-warning {
+	border-left-color: var(--uappt-color-warning);
+	background: var(--uappt-color-warning-bg);
+}
+.uappt-status-bar.uappt-status-error {
+	border-left-color: var(--uappt-color-danger);
+	background: var(--uappt-color-danger-bg);
+}
+.uappt-status-detail {
+	color: var(--uappt-color-text);
+}
+.uappt-status-action {
+	margin-left: var(--uappt-space-1);
+}
+.uappt-status-note {
+	display: block;
+	margin-top: 2px;
+	color: var(--uappt-color-text-muted);
+	font-size: 11px;
+}
+
+/* --- 商品編輯頁：服務方案（v2.19.0 改成卡片式）---
+   舊版是一張六欄的 <table>，min-width: 760px 配外層水平捲動。實測商品資料
+   metabox 只有 585px 寬、表格可見區更只有 442px——等於永遠有 318px 藏在捲軸
+   後面（「可服務人員」欄要捲才看得到），而「進階」展開層被塞進最窄的名稱欄
+   裡只剩 185px，長說明會被折成三行。
+
+   改成一方案一張卡片之後，每個欄位都拿得到整個 metabox 的寬度，窄版面不需要
+   任何捲動；欄位用 flex 自動換行，metabox 再窄也只是變成一欄。這跟
+   WooCommerce 自己的「變化款」介面是同一個做法。 */
+.uappt-plans-group .uappt-plans-intro {
+	padding: 0 var(--uappt-space-3);
+}
+.uappt-plans-group .uappt-plans-intro p {
+	margin: 0 0 var(--uappt-space-2);
+}
+.uappt-plans-group .uappt-plans-empty {
+	padding-left: var(--uappt-space-3);
+}
+
+.uappt-plans-rows {
+	margin: 0 var(--uappt-space-3) var(--uappt-space-3);
+}
+
+/* 卡片＝把手（左）＋內容（右）並排的兩欄版面。舊版把手跟名稱擠在
+   .uappt-plan-head 同一行，下面的 .uappt-plan-fields 卻是另一個從卡片內距頂邊
+   算起的區塊——結果卡片標題那一行的內容從「把手寬度＋間距」之後才開始，
+   下面每一行卻從卡片最左邊開始，兩條不同的左邊界，看起來就是「第二列對齊
+   到拖拉器」。改成把手獨立成卡片最左側一欄、.uappt-plan-body 吃掉剩餘寬度，
+   名稱、欄位、進階設定全部是 .uappt-plan-body 的子元素，天生共用同一條
+   左邊界，不需要再手動對齊。 */
+/* 卡片內距與卡片間距都從 space-3（12px）升到 space-4（16px）：12px 配上
+   有邊框的卡片視覺上偏緊繃，跟其他面板（.uappt-panel-body 就是 20px）比
+   顯得不成比例；卡片與卡片之間原本只有 8px（space-2），兩張卡片幾乎黏在
+   一起，看不出是兩個獨立方案。 */
+.uappt-plan-row {
+	display: flex;
+	align-items: flex-start;
+	gap: var(--uappt-space-2);
+	margin-bottom: var(--uappt-space-4);
+	padding: var(--uappt-space-4);
+	background: var(--uappt-surface);
+	border: 1px solid var(--uappt-color-border-strong);
+	border-radius: var(--uappt-radius-md);
+}
+
+/* ⚠️ **這條不是可有可無的。** WooCommerce 的 `.woocommerce_options_panel label`
+   是一整套「標籤浮在左邊 150px 欄位」的版面：
+   `float:left; width:150px; margin:0 0 0 -150px`。方案卡片用自己的排版，要把
+   這一套整組退掉——但只清「造成問題」的那個屬性：float、width，以及那個
+   把欄位往左拉出卡片的 `margin-left: -150px`。
+
+   選擇器至少要兩個 class：WooCommerce 那條是 (0,2,0)，`.uappt-plans-group label`
+   只有 (0,1,1) 壓不過它。
+
+   歷史教訓：這條覆寫原本綁在 `.uappt-plans-table` 上，卡片化把表格拿掉時
+   選擇器跟著失效，負 margin 立刻回來——**改結構時要一起檢查有沒有覆寫是
+   掛在被刪掉的選擇器上的**。
+
+   ⚠️ v2.20.2 又踩到一次同一種坑，這次自己改**了三次**才發現規律：
+   `margin: 0` 原本是清「全部四邊」，等於把上下 margin 也一起清光——後面
+   每次想幫卡片裡的某個 `<label>`（`.uappt-plan-advanced-toggle`、
+   `.uappt-plan-field--staff`）加垂直間距，都會被這條「兩個 class、寫在
+   前面」的規則用同樣的特異性打平、卻因為在原始碼裡排在後面而躺贏，新的
+   間距規則看起來寫對了，量出來卻是 0。改成只清 `margin-left`，上下 margin
+   交還給各自的規則自己決定，不用每加一條新樣式就要記得多掛一個 class
+   把特異性拉高。 */
+.uappt-plans-group .uappt-plan-row label {
+	float: none;
+	width: auto;
+	margin-left: 0;
+}
+
+/* 把手：跟名稱輸入框的第一行文字對齊即可，不必拉滿卡片全高——卡片展開
+   「進階」之後可能變得很高，把手若跟著拉滿整張卡片，使用者得抓準卡片
+   正中央那一點才能拖曳，反而不好用。用一點點上內距把 20px 高的圖示
+   對到名稱輸入框（約 30px 高）的垂直中心。 */
+.uappt-plan-handle {
+	flex: 0 0 auto;
+	padding-top: 5px;
+	cursor: move;
+	color: var(--uappt-color-text-faint);
+}
+
+.uappt-plan-body {
+	flex: 1 1 auto;
+	min-width: 0;
+}
+
+/* 卡片頂：名稱（吃掉剩餘空間）、停用徽章、進階、刪除。 */
+.uappt-plan-head {
+	display: flex;
+	align-items: center;
+	gap: var(--uappt-space-2);
+}
+
+.uappt-plan-head .uappt-plan-name {
+	flex: 1 1 12em;
+	min-width: 0;
+	font-weight: 600;
+}
+
+/* 時長／售價：兩個短數字欄位並排。這裡改成 `flex: 0 1 <固定寬度>`——不再
+   `flex-grow`，兩個三位數的輸入框不會被撐開去填滿整行寬度，中間也不會
+   因此空出一大塊留白；卡片變窄時仍可以 `flex-shrink` 縮小，不會硬撐出
+   捲軸。可服務人員拆到自己獨立一整行（見 .uappt-plan-field--staff），不再
+   跟這兩個擠在同一個 flex-wrap 列裡搶寬度。 */
+/* ⚠️ `width: 100%` 是刻意補上的，不是裝飾。手機寬度下這個 flex 容器如果是
+   `.uappt-plan-advanced`（一個純 display:block 的 div，沒有任何 width／
+   float 規則）的直接子元素，`width: auto` 有時會被瀏覽器算成 0，兩個緩衝
+   欄位因此被壓成一條看不出寬度的直排色塊（「前緩衝（分鐘）」整組字垂直排
+   成一行）；同一個 class 放在 `.uappt-plan-body` 底下當主要欄位列卻完全正常
+   ——排除過所有 CSS 規則（沒有任何選擇器對它設定 width／flex-basis／float），
+   實測純粹是巢狀 flex 容器在特定次像素寬度下的排版計算異常，跟這支外掛
+   自己的規則衝突無關。寫死 100% 讓它不再依賴瀏覽器自動計算，兩處
+   （主要欄位列、進階欄位列）都適用，不只是修狹窄那一種情境。 */
+.uappt-plan-fields {
+	display: flex;
+	flex-wrap: wrap;
+	width: 100%;
+	gap: var(--uappt-space-3);
+	margin-top: var(--uappt-space-4);
+}
+
+.uappt-plan-field {
+	display: flex;
+	flex: 0 1 8em;
+	flex-direction: column;
+	gap: 2px;
+	min-width: 0;
+}
+
+/* 可服務人員：獨立一整行，不在 .uappt-plan-fields 的 flex-wrap 列裡，寬度
+   跟隨 .uappt-plan-body 走滿整張卡片——人員多的時候標籤有地方一排排展開，
+   不會被時長／售價擠成一條窄縫（見下方「可服務人員」小節，跟商品層級的
+   欄位共用同一組換行／捲動規則）。 */
+/* ⚠️ 這裡要兩個 class：`.uappt-plan-field--staff` 自己只有 (0,1,0)，輸給
+   WooCommerce `.woocommerce_options_panel label, ...legend { margin: 0 0 0
+   -150px }` 的 (0,1,1)——那條除了負的 margin-left，也把 margin-top／
+   margin-bottom 一起設成 0，光靠「清掉 margin-left」的那條全域重置救不了
+   margin-top，因為兩條是分開的規則、各自比大小。 */
+.uappt-plans-group .uappt-plan-field--staff {
+	margin-top: var(--uappt-space-4);
+}
+
+.uappt-plan-field-label {
+	color: var(--uappt-color-text-muted);
+	font-size: 12px;
+}
+
+/* ⚠️ 三個 class 是刻意的，不是隨手多加。WooCommerce 自己的 admin.css 有一條
+   `.woocommerce_options_panel input[type="number"], ...[type="text"] { width:
+   50%; float: left; }`，特異性是 (0,2,1)——跟原本只掛兩個 class 的
+   `.uappt-plans-group .uappt-plan-field input` 完全打平。兩條規則平手時誰贏
+   要看樣式表載入順序，而 WooCommerce 的 admin.css 剛好排在後面，於是實際
+   套用的一直是它的 50% 寬，不是這裡想要的 100%——時長／售價兩個輸入框因此
+   只吃得到卡片給它們的一半寬度，欄位之間看起來留白特別大。多算一個既有的
+   `.uappt-plan-fields` 讓特異性變成 (0,3,1)，不靠載入順序也穩贏。
+   （`float: left` 不用另外清：這裡的 input 是 .uappt-plan-field 的 flex 子項，
+   flex 子項本來就不吃 float，規範層級直接失效。） */
+.uappt-plans-group .uappt-plan-fields .uappt-plan-field input {
+	width: 100%;
+}
+
+/* 進階展開層：拿得到整張卡片的寬度，不再擠在名稱欄裡。 */
+.uappt-plan-advanced {
+	margin-top: var(--uappt-space-4);
+	padding-top: var(--uappt-space-4);
+	border-top: 1px dashed var(--uappt-color-border);
+}
+
+.uappt-plan-advanced .uappt-plan-fields {
+	margin-top: 0;
+}
+
+/* --- 可服務人員：人多也不會把版面撐爆 ---
+   .uappt-staff-select 同時掛在「服務人員安排」的商品層級欄位與方案卡片的
+   .uappt-plan-staff 上，兩處共用同一組規則。
+
+   問題：舊版商品層級欄位是 `width:50%`，方案層級是 `width:100%`，兩個寬度
+   不一致；而且 WooCommerce 的多選 select2 選到的每個人名都是獨立一個
+   `<li>`（`float:left`，寬度自動貼合文字），欄位窄的時候一行塞不下兩個
+   標籤就會整組換到下一行——實測 12 位人員在 50% 寬（約 137px）的欄位下
+   會被撐成 12 行、359px 高，整頁內容跟著被往下推一大截；改成 100% 寬只是
+   緩解（12 位變成 4 行、156px），人員再多還是會無限長高下去。
+
+   兩步修正：① 兩處都統一成 100% 寬（PHP 端已改），標籤有多一倍空間可以
+   一行放好幾個；② 幫「已選人員」那個顯示區加一個高度上限 116px（約可見
+   4 行，最後一行故意留一點被裁切，暗示「還有更多、可以捲」）＋垂直捲動，
+   人員數量不管多少，這個欄位的高度永遠固定，不會再把下面的欄位擠走。
+   下拉搜尋清單本身（點開之後跳出來選人的那個選單）是 select2 原生元件，
+   本來就有自己的高度上限與捲動＋打字篩選，不需要另外處理。 */
+.uappt-staff-select + .select2-container .select2-selection__rendered {
+	max-height: 116px;
+	overflow-y: auto;
+}
+
+/* --- 商品層級「可服務的人員」：改成標籤自己一行、欄位另起一行 ---
+   問題根源：WooCommerce 的 `<p class="form-field">` 預設是「標籤浮在左邊
+   150px 欄位、緊接著的欄位在標籤右邊那條線上繼續往右排」。文字輸入框窄，
+   這套排法沒問題；但這個欄位寬度是 100%（見上面），select2 產生的那個
+   `<span class="select2-container">` 塞不進標籤旁邊剩下的空間，於是整個
+   換到下一行——「?」提示圖示（`wc_help_tip()` 輸出，緊跟在標籤後面）還留在
+   標籤那一行的右側，換行後的欄位left 邊界剛好對到「?」正下方，看起來像
+   「?」懸在欄位左上角、擠壓到欄位。
+
+   用 `wrapper_class="uappt-field-stacked"` 整個退掉浮動排法，改用 flex-wrap：
+   標籤＋「?」留在同一行（他們兩個都窄，順理成章排在一起），select2 欄位
+   用 `flex-basis: 100%` 強制自己另起一行——這是 flex-wrap 版面裡常見的
+   手動換行寫法：後面的項目要求 100% 寬度時，前面不管排了什麼，都不可能
+   有剩餘空間留給它，一定會被擠到下一行。換行後欄位的左邊界回到跟標籤同一
+   條線上，不再是「標籤右邊 150px 才開始」。 */
+/* ⚠️ `padding-left: 162px !important` 是 WooCommerce 自己的
+   `.woocommerce_options_panel p.form-field` 規則——特地留這麼寬的左內距，
+   是配合標籤原本「float:left + margin-left:-150px」的把戲：標籤用負
+   margin 把自己拉出這塊內距、擠回最左邊，內距本身則讓「標籤後面的內容」
+   自然從 162px 之後開始。上面已經把標籤的 float／負 margin 都清掉了，
+   這塊內距沒有標籤可以「拉出去」，標籤跟欄位就一起被晾在 162px 之後。
+   這條是 `!important`，一般的特異性贏不了，只能也用 `!important` 蓋過去
+   ——目前檔案裡第 2 個（第 1 個是手機版蓋過 select2 inline width 的那條），
+   成因一樣：跟自己管不到、寫死優先權的第三方輸出對抗。
+   ⚠️ 光加 `!important` 第一次沒有用：兩條都是 `!important` 時，特異性還是
+   會拿出來比。WooCommerce 那條實際命中的分支是
+   `.woocommerce_options_panel p.form-field`，兩個 class＋一個元素、
+   (0,2,1)；原本只寫 `.uappt-field-stacked`（一個 class、(0,1,0)）還是完全
+   打不過。改成 `.woocommerce_options_panel .uappt-field-stacked.form-field`
+   ——三個都是這個 `<p>` 身上已經掛著的 class，(0,3,0)，比大小只看第二個
+   數字就穩贏，不用再多發明一個 class。 */
+.woocommerce_options_panel .uappt-field-stacked.form-field {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: var(--uappt-space-1);
+	/* 12px 不是隨便挑的：這個區塊下面的「不開放客人指定服務人員」等勾選欄
+	   還是 WooCommerce 的預設排版，effective 左內距是 162px 內距減掉標籤的
+	   -150px 負 margin＝12px。這裡跟著用 12px，「服務人員安排」整組欄位
+	   才會是同一條左邊界，不會因為這一格改了排版就自己獨立出一條線。 */
+	padding-left: var(--uappt-space-3) !important;
+}
+
+/* ⚠️ `.uappt-field-stacked label` 只有 (0,1,1)，跟 WooCommerce 原本那條
+   `.woocommerce_options_panel label, ...legend { float:left; width:150px;
+   margin:0 0 0 -150px }` 特異性打平（也是 (0,1,1)）——樣式表載入順序決勝負，
+   WooCommerce 的排在後面，贏。這個 `<p>` 本身已經掛著 `.form-field` class
+   （WooCommerce 自己輸出的），多算這一個湊到 (0,2,1) 就穩贏，不用再發明
+   新 class。 */
+.uappt-field-stacked.form-field label {
+	float: none;
+	width: auto;
+	margin: 0;
+	flex: 0 0 auto;
+}
+
+/* ⚠️ `margin: 0` 蓋不掉：WooCommerce 較新版本另外有一條
+   `.wc-wp-version-gte-70 .woocommerce_options_panel
+   .form-field:not(:has(input[type="checkbox"], input[type="radio"]))
+   .woocommerce-help-tip { margin-top: 12px }`，選擇器疊了 `:not()` 加
+   `:has()`，特異性遠高於這裡兩個 class 湊出來的 (0,2,0)。那 12px 是
+   flex 子項自己的 margin-top，`align-items: center` 置中的是「連 margin
+   一起算」的範圍，上下 margin 不對稱就會把視覺置中的位置往下拖——這正是
+   「?」看起來偏下、沒有跟標籤文字水平對齊的原因。只有這個屬性需要蓋過，
+   用 `!important` 精準打掉這一個值就好，不用整條 margin 都下重手。 */
+.uappt-field-stacked .woocommerce-help-tip {
+	flex: 0 0 auto;
+	margin: 0;
+	margin-top: 0 !important;
+}
+
+.uappt-field-stacked .uappt-staff-select + .select2-container {
+	flex: 0 0 100%;
+	margin-top: var(--uappt-space-2);
+}
+
+/* ⚠️ 又是同一種「特異性打平、載入順序決勝負」——跟時長／售價欄位那次一樣的
+   坑，這次換這一格中獎。`.uappt-plans-group .uappt-plan-row label` 那條全域
+   重置（清 WooCommerce 的浮動標籤版面）選到兩個 class、(0,2,0)，而這裡原本
+   只掛一個 class、(0,1,0)——輸了，margin 被歸零，「暫停銷售此方案」整行貼死
+   在上面前／後緩衝欄位的正下方，手機版更明顯（欄位本來就擠，少了這圈留白
+   看起來像是所有欄位黏成一團）。補一個既有的 `.uappt-plan-advanced` 祖先
+   class 讓特異性變成 (0,3,0)，不靠載入順序也穩贏。 */
+.uappt-plans-group .uappt-plan-advanced .uappt-plan-advanced-toggle {
+	display: block;
+	margin: var(--uappt-space-3) 0 var(--uappt-space-1);
+	font-weight: 600;
+}
+
+.uappt-plans-group .uappt-plan-advanced .description {
+	margin: 0;
+	font-size: 12px;
+}
+
+/* 進階按鈕：舊版只有一個齒輪圖示，看不出是「展開更多設定」，補上文字。 */
+.uappt-toggle-advanced {
+	display: inline-flex;
+	align-items: center;
+	gap: 2px;
+	position: relative;
+	flex: 0 0 auto;
+	color: var(--uappt-color-text-muted);
+	text-decoration: none;
+}
+.uappt-toggle-advanced .dashicons {
+	width: 18px;
+	height: 18px;
+	font-size: 18px;
+}
+.uappt-toggle-advanced-text {
+	font-size: 12px;
+}
+/* 前後緩衝有值、或方案已停用時，這個圓點提醒管理者「這張卡片還有收起來的
+   設定」，免得展開層被誤以為是空的而一直沒被打開過。 */
+.uappt-toggle-advanced.has-values::after {
+	content: "";
+	position: absolute;
+	top: -1px;
+	right: -3px;
+	width: 6px;
+	height: 6px;
+	border-radius: 50%;
+	background: var(--uappt-color-danger);
+}
+
+.uappt-plans-group .uappt-remove-plan {
+	flex: 0 0 auto;
+	color: var(--uappt-color-danger);
+	font-size: 18px;
+	line-height: 1;
+	text-decoration: none;
+}
+
+/* 拖曳中的佔位：跟卡片同高的虛線框，看得出會落在哪裡。 */
+.uappt-plan-row-placeholder {
+	margin-bottom: var(--uappt-space-2);
+	background: var(--uappt-color-primary-bg);
+	border: 1px dashed var(--uappt-color-primary);
+	border-radius: var(--uappt-radius-md);
+}
+
+.uappt-plan-row.ui-sortable-helper {
+	box-shadow: var(--uappt-shadow-md);
+}
+
+.uappt-plan-row.is-inactive {
+	background: var(--uappt-surface-subtle);
+	opacity: 0.75;
+}
+.uappt-plan-inactive-badge {
+	flex: 0 0 auto;
+	margin-left: var(--uappt-space-1);
+}
+
+.uappt-focus-field {
+	text-decoration: underline;
+}
+
+.uappt-plans-group .uappt-plan-name.uappt-field-error {
+	border-color: var(--uappt-color-danger);
+	box-shadow: 0 0 0 1px var(--uappt-color-danger);
+}
+
+
+/* --- 今日營運（後台首頁） --- */
+.uappt-dash-cards {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+	gap: var(--uappt-space-4);
+	margin: var(--uappt-space-4) 0;
+}
+
+.uappt-dash-card {
+	display: flex;
+	flex-direction: column;
+	gap: var(--uappt-space-1);
+	padding: 18px 20px;
+	background: var(--uappt-surface);
+	border: 1px solid var(--uappt-color-border-subtle);
+	border-radius: var(--uappt-radius-lg);
+	box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+	text-decoration: none;
+	transition: box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+a.uappt-dash-card:hover {
+	box-shadow: var(--uappt-shadow-md);
+	transform: translateY(-1px);
+}
+
+.uappt-dash-card.is-static {
+	cursor: default;
+}
+
+.uappt-dash-card.is-warning {
+	border-color: var(--uappt-color-warning);
+	background: var(--uappt-color-warning-bg);
+}
+
+.uappt-dash-card-value {
+	font-size: 2em;
+	font-weight: 600;
+	line-height: 1.1;
+	color: var(--uappt-color-text);
+}
+
+.uappt-dash-card-label {
+	color: var(--uappt-color-text-muted);
+	font-size: 0.9em;
+	line-height: 1.4;
+}
+
+/* 卡片的次要數字（「實收 NT$487,573」「材料成本 NT$0 ／ 扣手續費後 …」）。
+   ⚠️ 這一行的存在本身就是修正：這些數字原本用括號接在標籤後面，而卡片是
+   `repeat(auto-fit, minmax(180px, 1fr))` 的格線——一旦某一列只排得下兩張，
+   那兩張就會變成整列最寬的，長標籤在裡面折成三行，整排卡片的高度被最囉嗦
+   的那一張帶著走。拆成獨立一行之後，標籤永遠是兩三個字，高度才穩定。 */
+.uappt-dash-card-sub {
+	color: var(--uappt-color-text-muted);
+	font-size: 0.82em;
+	line-height: 1.4;
+	/* 次要資訊不該跟標籤黏在一起，但也不能離太遠變成另一個區塊。 */
+	margin-top: -2px;
+}
+
+/* --- 收款方式設定表（v2.58.0） --- */
+
+.uappt-payment-table .uappt-input-rate {
+	/* 費率最多是 "100.000" 七個字元，給足寬度就好，不要用 regular-text
+	   佔掉半張表——旁邊的「%」才貼得上去。 */
+	width: 6em;
+	text-align: right;
+}
+
+.uappt-pm-rate {
+	display: inline-flex;
+	align-items: baseline;
+	gap: 4px;
+}
+
+.uappt-payment-table .uappt-pm-actions {
+	width: 4em;
+	text-align: right;
+}
+
+.uappt-pm-remove {
+	color: var(--uappt-color-text-muted);
+}
+
+.uappt-pm-remove:hover {
+	color: var(--uappt-color-danger);
+}
+
+.uappt-pm-add-wrap,
+.uappt-tier-add-wrap {
+	margin: var(--uappt-space-3) 0 var(--uappt-space-2);
+}
+
+/* --- 業績抽成的級距表（v2.63.0）---
+   跟收款方式設定同一組樣式：兩者都是「可增減的小表格」，長得一樣才不會
+   讓人以為是兩種不同的東西。 */
+.uappt-commission {
+	margin: 0;
+	padding: 0;
+	border: 0;
+}
+
+.uappt-commission-table {
+	max-width: 34em;
+}
+
+.uappt-commission-table .uappt-input-rate {
+	width: 6em;
+	text-align: right;
+}
+
+.uappt-commission-table input[type="number"]:not(.uappt-input-rate) {
+	width: 10em;
+	text-align: right;
+}
+
+.uappt-commission-table .uappt-tier-actions {
+	width: 4em;
+	text-align: right;
+}
+
+.uappt-tier-remove {
+	color: var(--uappt-color-text-muted);
+}
+
+.uappt-tier-remove:hover {
+	color: var(--uappt-color-danger);
+}
+
+/* --- 損益階梯（v2.59.0）---
+
+   四個數字（業績／材料成本／手續費／淨毛利）其實是同一條算式的四個階段，
+   會計的損益表就是這樣排的：每一行都從上一行推導下來。舊版把它們平鋪成
+   四張權重一樣的卡片，關係就消失了，「錢漏在哪」得在心裡自己重組一次。 */
+.uappt-pl {
+	max-width: 30em;
+}
+
+.uappt-pl-row {
+	display: grid;
+	/* 名目｜金額｜佔比｜漲跌。金額右對齊成一條垂直線，這是讓「上下相減」
+	   看得出來的關鍵——欄寬用 max-content 會隨每一列的字數浮動。 */
+	grid-template-columns: 1fr minmax(0, 7.5em) 3.5em auto;
+	align-items: baseline;
+	gap: var(--uappt-space-2);
+	padding: 7px 0;
+}
+
+.uappt-pl-label {
+	color: var(--uappt-color-text-soft);
+}
+
+.uappt-pl-value {
+	text-align: right;
+	font-variant-numeric: tabular-nums;
+	white-space: nowrap;
+}
+
+.uappt-pl-pct {
+	text-align: right;
+	color: var(--uappt-color-text-muted);
+	font-size: 12px;
+	font-variant-numeric: tabular-nums;
+}
+
+/* 第一行（營業收入）：這是基準，字大一點但不要搶走最後一行的位置。 */
+.uappt-pl-row.is-income .uappt-pl-value {
+	font-size: 1.15em;
+	font-weight: 600;
+}
+
+/* 扣除項用灰色與縮排，一眼看得出「這幾行是減項」。 */
+.uappt-pl-row.is-deduct .uappt-pl-label {
+	padding-left: var(--uappt-space-3);
+	color: var(--uappt-color-text-muted);
+}
+
+.uappt-pl-row.is-deduct .uappt-pl-value {
+	color: var(--uappt-color-text-muted);
+}
+
+/* 結論那一行：上方一條實線，就是會計報表的「合計線」。 */
+.uappt-pl-row.is-result {
+	margin-top: 2px;
+	border-top: 2px solid var(--uappt-color-border);
+	padding-top: 10px;
+}
+
+.uappt-pl-row.is-result .uappt-pl-label {
+	font-weight: 600;
+	color: var(--uappt-color-text);
+}
+
+.uappt-pl-row.is-result .uappt-pl-value {
+	font-size: 1.35em;
+	font-weight: 600;
+}
+
+.uappt-pl-delta {
+	font-size: 11px;
+}
+
+/* --- 「接下來已經排了多少」（v2.59.0）---
+
+   刻意不做成卡片：上面那一排卡片講的都是「已經發生的事」，這一條講的是
+   「從現在往後」。長得一樣會讓人以為它也在統計區間裡。 */
+.uappt-ahead {
+	display: flex;
+	align-items: flex-start;
+	gap: var(--uappt-space-2);
+	margin: var(--uappt-space-3) 0 var(--uappt-space-4);
+	padding: 10px var(--uappt-space-3);
+	background: var(--uappt-color-primary-bg);
+	border-radius: var(--uappt-radius-md);
+	color: var(--uappt-color-primary-ink);
+	font-size: 13px;
+	line-height: 1.6;
+}
+
+.uappt-ahead-icon {
+	flex: 0 0 auto;
+	display: inline-flex;
+	margin-top: 1px;
+}
+
+.uappt-ahead-icon svg {
+	width: 16px;
+	height: 16px;
+}
+
+/* --- 報表頁尾的名詞解釋（v2.58.0）---
+
+   這裡原本是連續 3～5 個 `.uappt-hint`（琥珀色左邊條）。單獨一個是提示，
+   疊五個就是一面黃牆：手機版量到 521px 高、桌面版則是整頁最後三分之一
+   全是同一種顏色的說明文字，反而沒有人會去讀。
+   收合成一塊，內容一字不改——那些定義正是使用者拿我們的數字跟自己的帳
+   對不起來時唯一的解答，不能刪，只能收。 */
+.uappt-notes {
+	max-width: 46em;
+	margin: var(--uappt-space-5) 0 var(--uappt-space-4);
+	background: var(--uappt-surface);
+	border: 1px solid var(--uappt-color-border-subtle);
+	border-radius: var(--uappt-radius-lg);
+}
+
+.uappt-notes > summary {
+	display: flex;
+	align-items: center;
+	gap: var(--uappt-space-2);
+	padding: 10px var(--uappt-space-3);
+	color: var(--uappt-color-text-muted);
+	font-size: 13px;
+	font-weight: 600;
+	cursor: pointer;
+	/* 收合時整塊就是這一列，圓角要跟外框一致；展開後由下面那條規則接手。 */
+	border-radius: var(--uappt-radius-lg);
+}
+
+.uappt-notes[open] > summary {
+	border-bottom: 1px solid var(--uappt-color-border-subtle);
+	border-radius: var(--uappt-radius-lg) var(--uappt-radius-lg) 0 0;
+}
+
+.uappt-notes > summary:hover {
+	color: var(--uappt-color-text);
+}
+
+/* 鍵盤焦點：<summary> 預設的外框在圓角上會切得很難看，換成 WP 後台自己
+   那一套（見兩層導覽的 focus 樣式）。 */
+.uappt-notes > summary:focus-visible {
+	outline: 2px solid var(--uappt-color-primary);
+	outline-offset: -2px;
+}
+
+.uappt-notes-count {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-width: 18px;
+	height: 18px;
+	padding: 0 5px;
+	background: var(--uappt-surface-subtle);
+	border-radius: 9px;
+	color: var(--uappt-color-text-muted);
+	font-size: 11px;
+	font-weight: 600;
+}
+
+.uappt-notes-body {
+	padding: var(--uappt-space-2) var(--uappt-space-3) var(--uappt-space-3);
+}
+
+.uappt-notes-body p {
+	margin: var(--uappt-space-2) 0 0;
+	color: var(--uappt-color-text-muted);
+	font-size: 13px;
+	line-height: 1.7;
+}
+
+.uappt-notes-body p:first-child {
+	margin-top: var(--uappt-space-1);
+}
+
+/* --- 今日營運的快捷功能（v2.37.0）---
+
+   這一頁從「指路牌」改成「工作台」：以前每一列都只是連到別的頁面編輯，
+   櫃檯做一件事就換一次頁、做完還被丟在那一頁。 */
+
+/* 客人快搜。電話進來時第一個要用的東西，所以放在最上面、卡片之前。 */
+.uappt-dash-search {
+	margin: var(--uappt-space-3) 0 var(--uappt-space-4);
+}
+
+.uappt-dash-search input[type="search"] {
+	min-width: 22em;
+}
+
+/* 今天的預約時間軸。取代了原本那張唯讀的「接下來最近一筆」卡片——
+   同樣的資訊用 .is-next 在列上標出來就好，不必再單獨佔一格。 */
+.uappt-dash-today {
+	margin-bottom: var(--uappt-space-5);
+}
+
+.uappt-today-table .uappt-today-time {
+	white-space: nowrap;
+	width: 1%;
+}
+
+.uappt-today-table tr.is-next > td {
+	background: var(--uappt-color-surface-accent, #f0f6fc);
+}
+
+/* 就地操作的按鈕：兩顆（完成／未到）要並排，不要各自佔一行。
+   每一顆都是獨立的 <form>（admin-post 的 action 不同），所以要靠
+   inline-block 把它們拉回同一行。 */
+.uappt-today-actions {
+	white-space: nowrap;
+}
+
+.uappt-today-actions form {
+	display: inline-block;
+	margin-left: var(--uappt-space-1);
+}
+
+.uappt-today-actions form:first-of-type {
+	margin-left: 0;
+}
+
+/* --- 功能模組的開關列 ---
+
+   滑動開關的尺寸、顏色與版面**刻意逐項對齊終極電商（.twshop-toggle）與
+   終極登入（.wclon-toggle）**：44×24、#2271b1 開啟色、列高 13px、名稱欄寬
+   120px。同一套產品的模組開關長得一樣，客戶在三支外掛之間切換時不用重新
+   認一次。class 前綴用自己的，避免同站撞名。
+
+   ⚠️ 那兩支是把原生 checkbox 用 `opacity:0; width:0; height:0` 藏起來，
+   focus 之後畫面上沒有任何提示。這裡多加一條 :focus-visible 的外框——
+   用滑鼠時完全看不出差別，用鍵盤 Tab 才會出現，是純粹的補強不是改樣式。 */
+.uappt-toggle {
+	position: relative;
+	display: inline-block;
+	width: 44px;
+	height: 24px;
+	vertical-align: middle;
+	flex-shrink: 0;
+}
+
+/* ⚠️ 選擇器要帶上 [type="checkbox"]：WP 的 forms.css 有
+   `input[type=checkbox] { width:1rem; height:1rem }`，權重跟
+   `.uappt-toggle input` 打平、靠檔案順序決勝負，實測是 WP 贏，原生方塊會維持
+   16px 寬（雖然 opacity:0 看不見，但它就沒有真的歸零）。 */
+.uappt-toggle input[type="checkbox"],
+.uappt-toggle input[type="radio"] {
+	opacity: 0;
+	width: 0;
+	height: 0;
+	margin: 0;
+	min-width: 0;
+}
+
+.uappt-slider {
+	position: absolute;
+	cursor: pointer;
+	inset: 0;
+	background: #ccc;
+	border-radius: 24px;
+	transition: .2s;
+}
+
+.uappt-slider::before {
+	content: "";
+	position: absolute;
+	height: 18px;
+	width: 18px;
+	left: 3px;
+	bottom: 3px;
+	background: #fff;
+	border-radius: 50%;
+	transition: .2s;
+}
+
+.uappt-toggle input[type="checkbox"]:checked + .uappt-slider,
+.uappt-toggle input[type="radio"]:checked + .uappt-slider {
+	background: var(--uappt-color-primary);
+}
+
+.uappt-toggle input[type="checkbox"]:checked + .uappt-slider::before,
+.uappt-toggle input[type="radio"]:checked + .uappt-slider::before {
+	transform: translateX(20px);
+}
+
+.uappt-toggle input[type="checkbox"]:focus-visible + .uappt-slider,
+.uappt-toggle input[type="radio"]:focus-visible + .uappt-slider {
+	box-shadow: 0 0 0 2px #fff, 0 0 0 4px var(--uappt-color-primary);
+}
+
+.uappt-module-row {
+	display: flex;
+	align-items: center;
+	gap: 16px;
+	padding: 13px 0;
+	border-bottom: 1px solid #f0f0f0;
+}
+
+.uappt-module-row:last-child {
+	border-bottom: none;
+}
+
+.uappt-module-label {
+	font-weight: 600;
+	width: 120px;
+	flex-shrink: 0;
+	cursor: pointer;
+}
+
+.uappt-module-desc {
+	color: var( --uappt-color-text-muted );
+	font-size: 13px;
+}
+
+/* 群組（方案）的標題列。跟底下的模組列**用同一個 .uappt-module-row 結構**，
+   所以總開關與模組開關會對齊在同一欄。
+
+   ⚠️ 線畫在**標題底下**，不是上面。畫在上面的話那條線會把標題跟前一組的
+   內容綁在一起，看起來像是「上一組的收尾」而不是「這一組的開頭」——分隔線
+   永遠要落在它要分開的兩件東西之間，這裡要分開的是標題與它自己的內容。
+   組與組之間改用留白拉開，不再多一條線。
+
+   底色滿版延伸到面板邊緣（負的左右外距抵銷 .uappt-panel-body 的 20px 內距），
+   讓它讀起來是一整條標題列，而不是一列縮在中間的文字。 */
+.uappt-module-row.is-group {
+	margin: var(--uappt-space-5) -20px 0;
+	padding: 10px 20px;
+	background: var( --uappt-surface-subtle );
+	border-top: 1px solid var( --uappt-color-border-subtle );
+	border-bottom: 1px solid var( --uappt-color-border );
+}
+
+/* 第一組上面已經有「目前方案」那條線，不必再留一大段空白。 */
+.uappt-module-row.is-group:first-of-type {
+	margin-top: 0;
+}
+
+/* 版本名稱：跟模組名稱同樣是粗體，靠**字級與字距**拉開層級。
+   中文沒有大小寫可用，字距是最有效的「這是標題」訊號，而且不必換顏色——
+   換顏色會讓人以為那是某種狀態。 */
+.uappt-module-row.is-group .uappt-module-label {
+	font-size: 15px;
+	letter-spacing: .08em;
+	color: var( --uappt-color-text );
+}
+
+.uappt-module-row.is-group .uappt-module-desc {
+	color: var( --uappt-color-text-soft );
+}
+
+/* 群組總開關「只開了一部分」時的半開樣式：圓鈕停在中間、底色是主色的淡版。
+   沒有這個的話，專業版兩個模組只開一個會顯示成「關」，看起來像壞掉。 */
+.uappt-toggle input[type="checkbox"]:indeterminate + .uappt-slider {
+	background: var( --uappt-color-primary );
+	opacity: .45;
+}
+
+.uappt-toggle input[type="checkbox"]:indeterminate + .uappt-slider::before {
+	transform: translateX(10px);
+}
+
+/* 目前方案：從開關反推出來的（UAPPT_Modules::current_tier()），放在最上面
+   ——這一頁最先要回答的問題就是「這個站現在是什麼方案」。
+   它**不是控制項**，所以不給它開關的外觀，改用徽章。 */
+.uappt-module-summary {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: 8px;
+	margin: 0 0 var(--uappt-space-4);
+	padding-bottom: var(--uappt-space-4);
+	border-bottom: 1px solid var( --uappt-color-border );
+}
+
+.uappt-module-summary-label {
+	color: var( --uappt-color-text-muted );
+	font-size: 13px;
+}
+
+/* 方案名稱做成徽章：它是一個「狀態」而不是一段敘述，給它一個形狀才看得出
+   這是整頁的結論。用主色的淡底＋深字，跟頁面上的開關同一個色系但不會搶戲。 */
+.uappt-tier-badge {
+	display: inline-block;
+	padding: 3px 12px;
+	border-radius: 999px;
+	background: var( --uappt-color-primary-bg );
+	border: 1px solid var( --uappt-color-primary );
+	color: var( --uappt-color-primary-ink );
+	font-size: 14px;
+	font-weight: 600;
+	letter-spacing: .06em;
+	line-height: 1.6;
+}
+
+/* 加購的部分是徽章的補充，所以不進徽章裡：它不是方案的一部分。 */
+.uappt-tier-extra {
+	color: var( --uappt-color-text-soft );
+	font-size: 13px;
+}
+
+.uappt-tier-extra:empty {
+	display: none;
+}
+
+/* 「有未儲存的變更」做成琥珀色的小標籤，跟方案徽章形狀一致、顏色不同，
+   一眼看得出這是提醒不是狀態。 */
+.uappt-module-dirty {
+	display: inline-block;
+	padding: 2px 10px;
+	border-radius: 999px;
+	background: var( --uappt-color-amber-bg );
+	color: var( --uappt-color-amber-ink );
+	font-size: 12px;
+}
+
+/* ⚠️ 只要給了 display，就一定要補這一條。瀏覽器內建樣式表的
+   `[hidden] { display: none }` 權重比 author 的 class 規則低，所以
+   `.uappt-module-dirty { display: inline-block }` 會把 hidden 屬性蓋掉
+   ——那個標籤會一載入就掛在那裡，不管有沒有真的改過東西。 */
+.uappt-module-dirty[hidden] {
+	display: none;
+}
+
+/* ⚠️ **整個後台一律：有 hidden 屬性就是藏起來。**（v2.94.0）
+ *
+ * 上面那條是逐個補的，而逐個補一定會漏：v2.91.0 的班別列（`.uappt-shift-pick`
+ * 有 `display: flex`）與「還原未儲存的變更」（WordPress 的 `.wp-core-ui .button`
+ * 給了 `display: inline-block`）從上線起就**一直顯示**——沒選日子時班別鈕看得到、
+ * 點了沒反應，正好是那一版想消滅的事。當時的驗證頁沒有載入 buttons.css 也沒有
+ * `wp-core-ui`，所以沒看出來；做全店月排班表時用完整樣式才抓到。
+ *
+ * 外掛的 JS 一律用 hidden 屬性控制顯示（不用 jQuery 的 show()／hide()），所以
+ * 這條不會跟任何既有行為打架。 */
+.uappt-wrap [hidden] {
+	display: none !important;
+}
+
+.uappt-module-dirty {
+	color: var( --uappt-color-warning-ink, #8a6116 );
+	margin-left: 4px;
+}
+
+/* 待審排班的就地核准／駁回：兩顆按鈕要並排。
+   .uappt-shift-review-form 在排班申請頁本身是整列寬（那裡還有審核備註輸入框），
+   首頁這一份 with_note 是 false、只剩一顆按鈕，讓它們回到同一行。 */
+.uappt-dash-list .uappt-shift-review-form {
+	display: inline-block;
+	margin: 0 var(--uappt-space-1) var(--uappt-space-2) 0;
+}
+
+.uappt-dash-list > li > .uappt-shift-review-form:first-of-type {
+	margin-left: 4px;
+}
+
+/* 待分派的就地指派：下拉 ＋ 按鈕，縮排對齊上面那一列的文字。 */
+.uappt-dash-assign {
+	display: flex;
+	gap: var(--uappt-space-2);
+	align-items: center;
+	padding: 0 4px var(--uappt-space-2);
+}
+
+.uappt-dash-assign select {
+	flex: 1;
+	min-width: 0;
+}
+
+.uappt-dash-columns {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+	gap: var(--uappt-space-4);
+	align-items: start;
+}
+
+/* 過渡期的 .uappt-panel 別名已於階段 5 移除——dashboard.php 現在跟其他
+   頁面一樣用 .uappt-panel + UAPPT_Admin::panel_head()。
+
+   ⚠️ 這裡本來還留著一條 `.uappt-panel h2 { margin: 0 0 12px; display: flex; }`，
+   是 dashboard 還在「h2 直接放進 .uappt-panel」時代的殘留。它跟上面的
+   `.uappt-panel-head h2 { margin: 0 }` **特異性完全相同（0,2,0）而位置更後面**，
+   所以整個外掛每一張卡片的標題都被硬塞了 12px 的下外距——標題列是
+   `align-items: center`，置中的是「外距框」，文字因此固定比圖示徽章高 6px。
+   全站沒有任何一個 h2 是直接放在 .uappt-panel 裡的（都經過 panel_head()），
+   這條規則沒有作用對象，連同沒人使用的 .uappt-panel-more 一起刪掉。 */
+
+.uappt-dash-list {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+}
+
+.uappt-dash-list li {
+	border-top: 1px solid var(--uappt-surface-subtle);
+}
+
+.uappt-dash-list li:first-child {
+	border-top: none;
+}
+
+.uappt-dash-list a {
+	display: flex;
+	align-items: center;
+	gap: var(--uappt-space-2);
+	padding: var(--uappt-space-2) var(--uappt-space-1);
+	text-decoration: none;
+	color: inherit;
+	/* flex 容器預設不會把子項縮到比內容還窄（min-width 是 auto，不是 0），
+	   卡片一窄，時間＋商品名稱＋客人姓名三項的內容寬度加起來超過容器時就會
+	   整組溢出容器右緣，不會自動換行或裁切。 */
+	min-width: 0;
+	/* 允許換行：窄面板裡與其把名稱裁成三個字，不如讓它掉到下一行完整顯示。 */
+	flex-wrap: wrap;
+	border-radius: var(--uappt-radius-sm);
+}
+
+.uappt-dash-list a:hover {
+	background: var(--uappt-surface-subtle);
+}
+
+.uappt-dash-list-time {
+	flex: 0 0 auto;
+	font-weight: 600;
+	color: var(--uappt-color-text);
+	white-space: nowrap;
+}
+
+.uappt-dash-list-name {
+	/* min-width 給到 8em 而不是縮到底：面板欄位在 1100px 寬的螢幕上只有
+	   兩百多 px，時段字串（「2026-09-10 (週四) 09:30–10:30」）本身就吃掉
+	   大半，名稱若能一路縮就會被裁成「Sna…」——那是把最需要看的資訊裁掉，
+	   等於沒顯示。給一個下限逼它換行到下一整行，反而完整讀得到。 */
+	flex: 1 1 auto;
+	min-width: 8em;
+	overflow: hidden;
+	white-space: nowrap;
+	text-overflow: ellipsis;
+	color: var(--uappt-color-text);
+}
+
+.uappt-dash-list-customer {
+	/* 時段（不能縮）跟商品名稱（縮到 3em 為止）都讓完之後，客人姓名是最後
+	   才需要跟著縮的一項——一樣裁成單行加刪節號，不做成 0 0 auto 硬把版面
+	   撐開。 */
+	flex: 0 1 auto;
+	min-width: 0;
+	overflow: hidden;
+	white-space: nowrap;
+	text-overflow: ellipsis;
+	color: var(--uappt-color-text-muted);
+	font-size: 0.9em;
+}
+
+.uappt-dash-list--staff li {
+	display: flex;
+	align-items: center;
+	gap: var(--uappt-space-2);
+	padding: var(--uappt-space-2) var(--uappt-space-1);
+}
+
+.uappt-dash-sublabel {
+	margin: var(--uappt-space-3) 0 var(--uappt-space-1);
+	font-size: 0.85em;
+	color: var(--uappt-color-text-muted);
+}
+
+.uappt-dash-tags {
+	margin: 0;
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--uappt-space-1);
+}
+
+/* 排班申請審核頁：hard 用危險色（擋核准），soft 用警告色（僅提醒），
+   跟 .uappt-badge-* 共用同一份色票 token，不另外開一組色階。 */
+.uappt-shift-conflict {
+	margin: var(--uappt-space-1) 0;
+	padding: var(--uappt-space-1) var(--uappt-space-2);
+	border-radius: var(--uappt-radius-sm);
+	font-size: 0.9em;
+}
+
+.uappt-shift-conflict--hard {
+	background: var(--uappt-color-danger-bg);
+	color: var(--uappt-color-danger);
+}
+
+.uappt-shift-conflict--soft {
+	background: var(--uappt-color-warning-bg);
+	color: var(--uappt-color-warning);
+}
+
+.uappt-shift-conflict-list {
+	margin: 0 0 var(--uappt-space-2);
+	padding-left: var(--uappt-space-4);
+	font-size: 0.9em;
+}
+
+.uappt-shift-review-form {
+	display: flex;
+	align-items: center;
+	gap: var(--uappt-space-1);
+	margin-top: var(--uappt-space-1);
+}
+
+/* --- 人力資源批次匯入 --- */
+.uappt-import-intro {
+	max-width: 46em;
+}
+
+.uappt-import-panels {
+	display: grid;
+	/* 320px 的欄寬下限比 .uappt-dash-columns 用的 280px 還寬，在剛好 320px
+	   CSS 寬度的手機（例如 iPhone SE 第一代）上，扣掉 .wrap 左右內距後可用
+	   寬度不到 320px，欄位反而比容器還寬、被撐出螢幕。跟 .uappt-dash-columns
+	   對齊，改用同一個下限，不另立一個數字。 */
+	grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+	gap: var(--uappt-space-4);
+	margin: var(--uappt-space-4) 0 var(--uappt-space-5);
+	align-items: start;
+}
+
+/* 外框與內距都由 .uappt-panel / .uappt-panel-head / .uappt-panel-body 提供，
+   這裡不再重複一份。 */
+
+.uappt-import-columns {
+	font-size: 0.9em;
+	color: var(--uappt-color-text-muted);
+}
+
+/* 檔案選擇框在窄欄位裡會把按鈕擠出邊界，讓它自己佔一行。 */
+.uappt-import-form {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: var(--uappt-space-2);
+	margin: var(--uappt-space-3) 0;
+}
+
+.uappt-import-form input[type="file"] {
+	flex: 1 1 100%;
+	min-width: 0;
+}
+
+.uappt-import-preview {
+	table-layout: auto;
+}
+
+.uappt-import-preview .uappt-import-col-line {
+	width: 6em;
+}
+
+.uappt-import-preview .uappt-import-col-op {
+	width: 6em;
+}
+
+.uappt-import-apply {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	gap: var(--uappt-space-2);
+	margin: var(--uappt-space-3) 0 var(--uappt-space-5);
+}
+
+.uappt-import-staff-map {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--uappt-space-2);
+}
+
+.uappt-import-staff-chip {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--uappt-space-1);
+	padding: 2px var(--uappt-space-2);
+	background: var(--uappt-surface-subtle);
+	border: 1px solid var(--uappt-color-border);
+	border-radius: var(--uappt-radius-sm);
+}
+
+/* 排班申請審核頁：一列＝一批（v2.17.0）。展開區沿用同一份色票，不另開一組。 */
+.uappt-shift-batches td {
+	vertical-align: top;
+}
+
+.uappt-shift-batch-detail {
+	margin-top: var(--uappt-space-2);
+}
+
+.uappt-shift-batch-detail summary {
+	cursor: pointer;
+	color: var(--uappt-color-info);
+	font-weight: 600;
+}
+
+.uappt-shift-batch-detail table {
+	margin-top: var(--uappt-space-2);
+}
+
+/* --- 設定頁：短代碼用法對照 --- */
+.uappt-copy {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	max-width: 100%;
+}
+
+.uappt-copy input {
+	flex: 1 1 auto;
+	min-width: 0;
+	font-family: Consolas, Monaco, monospace;
+	font-size: 12px;
+	background: var(--uappt-color-surface-subtle, #f6f7f7);
+}
+
+/* 表格儲存格裡的窄版：短代碼通常不長，給一個合理的下限就好，
+   不要讓輸入框把欄寬撐開。 */
+.uappt-copy.is-compact {
+	width: 100%;
+}
+
+.uappt-copy.is-compact input {
+	width: 100%;
+}
+
+.uappt-copy-btn.is-copied {
+	border-color: var(--uappt-color-success, #00a32a);
+	color: var(--uappt-color-success, #00a32a);
+}
+
+.uappt-shortcode-table {
+	margin: 8px 0 var(--uappt-space-4, 16px);
+}
+
+.uappt-shortcode-table code {
+	white-space: nowrap;
+}
+
+.uappt-wizard-pages {
+	margin: 8px 0 var(--uappt-space-4, 16px);
+	padding: 0;
+	list-style: none;
+}
+
+.uappt-wizard-pages li {
+	display: flex;
+	align-items: center;
+	gap: var(--uappt-space-2, 8px);
+	padding: 6px 0;
+	border-bottom: 1px solid var(--uappt-color-border-subtle, #e6e7e9);
+}
+
+.uappt-wizard-pages li:last-child {
+	border-bottom: none;
+}
+
+.uappt-wizard-page-edit {
+	margin-left: auto;
+	font-size: 12px;
+}
+
+/* --- 人員照片欄位 ---
+   預覽固定 96px 方框並 object-fit: cover：上傳的照片長寬比不會一致，不裁切
+   的話欄位高度會隨每個人的照片跳動，整張表格看起來歪掉。
+
+   刻意做成圓形（border-radius: 50%）而不是方角：前台的人員卡片預設就是圓形
+   大頭貼，後台預覽跟前台長得一樣，管理者上傳當下就看得出人臉會不會被圓形
+   裁掉——否則要等前台做好了才發現照片構圖不能用。 */
+.uappt-photo-preview {
+	margin-bottom: var(--uappt-space-2);
+}
+
+.uappt-photo-preview img {
+	width: 96px;
+	height: 96px;
+	object-fit: cover;
+	border-radius: 50%;
+	border: 1px solid var(--uappt-color-border, #dcdcde);
+	display: block;
+}
+
+.uappt-photo-field .uappt-photo-remove {
+	margin-left: var(--uappt-space-2);
+	color: var(--uappt-color-danger-ink, #b32d2e);
+}
+
+/* --- 批次排班的月曆（v2.57.0）---
+   標記跟前台員工中心的「我的班表」共用同一份 partial
+   （views/partials/month-grid.php），但樣式是另一套：前台那份用的是佈景主題
+   的色票（--uappt-accent／--uappt-border），在 wp-admin 裡不存在。
+   這裡是**同一個元件的後台皮膚**，不是複製一份邏輯——格線結構、class 名稱、
+   狀態判斷全部來自那份 partial，這裡只決定顏色與尺寸。 */
+.uappt-wrap .uappt-cal-nav {
+	display: flex;
+	align-items: center;
+	gap: var(--uappt-space-3);
+	margin: 0 0 var(--uappt-space-4);
+}
+
+.uappt-wrap .uappt-cal-nav-label {
+	min-width: 8em;
+	font-size: 14px;
+}
+
+/* ⚠️ minmax(0, 1fr) 不能寫成 1fr。`1fr` 等於 `minmax(auto, 1fr)`，而 auto 的
+   最小值是**內容的最小寬度**——格子裡有「00:00–23:00」「主管調整」這種字串，
+   七欄加起來縮不到容器寬度以下，整條格線就會撐出去。而面板是 overflow: hidden，
+   撐出去的部分**不是出現捲軸，是直接不見**：375px 下最後一欄（週六）連同它的
+   勾選框整個被裁掉，點不到也看不到。minmax(0, …) 才允許欄位縮得比內容還窄。 */
+.uappt-wrap .uappt-cal-weekday-head,
+.uappt-wrap .uappt-cal-week {
+	display: grid;
+	grid-template-columns: repeat(7, minmax(0, 1fr));
+	gap: 4px;
+	margin-bottom: 4px;
+}
+
+.uappt-wrap .uappt-cal-weekday-head {
+	color: var(--uappt-color-text-muted);
+	font-size: 12px;
+	font-weight: 600;
+	text-align: center;
+}
+
+.uappt-wrap .uappt-cal-day {
+	position: relative;
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	min-height: 72px;
+	padding: 6px;
+	background: var(--uappt-surface);
+	border: 1px solid var(--uappt-color-border);
+	border-radius: var(--uappt-radius-sm);
+	font-size: 12px;
+	cursor: default;
+}
+
+/* 整格都可以點（label 包著勾選框），游標要說出這件事。 */
+.uappt-wrap .uappt-cal-day:has( .uappt-cal-checkbox ) {
+	cursor: pointer;
+}
+
+.uappt-wrap .uappt-cal-day:has( .uappt-cal-checkbox:checked ) {
+	background: var(--uappt-color-primary-bg);
+	border-color: var(--uappt-color-primary);
+}
+
+/* 補滿整列用的鄰月日子：淡掉但不隱藏——隱藏會讓格線少一塊、每一列對不齊。 */
+.uappt-wrap .uappt-cal-day.is-outside {
+	opacity: .45;
+}
+
+/* 「今天」用日期旁的小標，**不用框**（v2.97.0）。原本是 2px 藍色邊框，而選取也是藍框，
+   兩個疊在一起分不出「這天是今天」還是「我選了這天」。小標只在後台排班月曆印
+   （month-grid.php 的 $grid_paintable），前台員工中心的月曆有自己的樣式。 */
+.uappt-wrap .uappt-cal-today {
+	display: inline-block;
+	margin-left: 4px;
+	padding: 0 5px;
+	border-radius: 999px;
+	background: var(--uappt-color-primary-ink);
+	color: #fff;
+	font-size: 10px;
+	font-weight: 600;
+	line-height: 16px;
+	vertical-align: 1px;
+}
+
+/* 「還沒排班」的日子給灰底：批次排班要找的就是這些格子，它們得一眼看得出來。 */
+.uappt-wrap .uappt-cal-day.is-unset {
+	background: var(--uappt-surface-subtle);
+}
+
+.uappt-wrap .uappt-cal-day .uappt-cal-checkbox {
+	align-self: flex-end;
+	margin: 0;
+}
+
+.uappt-wrap .uappt-cal-day-num {
+	font-weight: 600;
+}
+
+.uappt-wrap .uappt-cal-day-body {
+	display: flex;
+	flex-direction: column;
+	gap: 1px;
+}
+
+.uappt-wrap .uappt-cal-range,
+.uappt-wrap .uappt-cal-count {
+	color: var(--uappt-color-text-muted);
+}
+
+.uappt-wrap .uappt-cal-source {
+	color: var(--uappt-color-text-faint);
+	font-size: 11px;
+	font-style: italic;
+}
+
+/* --- 響應式：手機寬度（v2.19.2，v2.19.4 改寫表格策略） ---
+   斷點用 782px，跟 WP 核心自己收合管理選單成漢堡選單的斷點一致，不另外
+   發明一個數字——使用者在那個寬度已經看慣選單變了樣子，內容跟著在同一個
+   點改變排版是符合預期的。
+
+   在這之前，整份 admin.css 完全沒有任何 @media 斷點（除了 reduce-motion）。
+   桌面版把「欄位多的表格」「7 欄的月曆格」這類本來就需要較寬版面的元件
+   直接攤開，手機寬度下沒有任何收合或捲動機制接手，結果內容被 WP 核心
+   `body { overflow-x: hidden }` 整段裁掉、完全看不到也點不到。 */
+
+@media (max-width: 782px) {
+	/* --- 表單欄位：補回左右內距 ---
+	   桌面版的兩欄版面是「th 出左邊界、td 出右邊界」分工：
+	   `.form-table th { padding-left: 20px }`、`td { padding-right: 20px }`，
+	   td 的左內距刻意是 0（因為它左邊還有 th）。
+	   WP 核心在這個寬度把 th／td 都改成 `display: block` 直式堆疊之後，
+	   td 變成從卡片左緣起算的整行區塊，那個「left: 0」就直接讓輸入框與
+	   說明文字貼死在卡片邊框上，而標籤（th）卻還有 20px——同一張卡片裡
+	   兩條不同的左邊界，就是「內容與左側邊界沒調好」的來源。
+	   兩邊都補成 20px，卡片內容才回到同一條垂直線。 */
+	.uappt-wrap .form-table th,
+	.uappt-wrap .form-table td {
+		padding-left: 20px;
+		padding-right: 20px;
+	}
+
+	/* 直式堆疊之後，標籤與它的欄位是上下相鄰的一組，中間不需要桌面版
+	   那種「兩欄各自留白」的間距，否則標籤會像浮在半空。 */
+	.uappt-wrap .form-table th {
+		padding-bottom: var(--uappt-space-1);
+	}
+
+	.uappt-wrap .form-table td {
+		padding-top: 0;
+	}
+
+	/* --- 資料表格：改成「一列一筆、標籤在左值在右」 ---
+	   v2.19.2 這裡原本是「保留欄寬、整張表格橫向捲動」。那一版解決了
+	   「內容被裁掉完全碰不到」的致命問題，但實測下來欄位數一多就不堪用：
+	   375px 寬的畫面上，預約列表九欄各自只分到 37–102px，「操作」欄只有
+	   37px——「編輯 ｜ 分派 ｜ 取消」被擠成一個字一行的直排，狀態徽章
+	   （nowrap）則直接壓過儲存格邊界跑到隔壁欄；每一列高 118px，人員列表
+	   更誇張，七欄裡有四欄不到 60px、每列高 141px。而且橫向捲動時第一欄
+	   會捲出畫面，看到右邊的「狀態」時已經不知道那是哪一筆預約了。
+	   改成把每一列拆成直式的「標籤：值」——這是資料表在手機上的標準解法，
+	   欄位再多也不會互相擠壓，也不需要左右捲動去對照自己在看哪一列。
+	   標籤來自各個 view 在 <td> 上補的 data-label（見 bookings.php 等），
+	   不是靠 JS 從 <thead> 抓，避免無 JS 時整張表變成沒有欄位名的裸資料。
+	   ⚠️ v2.59.0 起**只套用在「紀錄清單」**，報表的數值矩陣走另一套（見下面
+	   .uappt-table--matrix）。分界不是看好不好看，是看使用者在那張表上做什麼：
+	   - 紀錄清單（預約列表、人員列表、庫存）：每一列是一個東西，欄位型別
+	     各異、還帶操作按鈕，你要讀的是「這一列的所有欄位」→ 直式堆疊更好讀。
+	   - 數值矩陣（報表）：每一欄是同一個指標，你要做的是「比較同一欄跨列」
+	     （哪一天業績最高、哪一位人員未到率最高）→ 堆疊把這件事徹底摧毀，
+	     得改成橫向捲動並凍結第一欄。
+	   ⚠️ 只套用在「一列一筆紀錄」的清單表格（.uappt-table）。人員編輯頁的
+	   每週營業時間（7 天 × 3 時段的輸入格）與時段分類表不在此列——它們是
+	   二維的輸入矩陣，拆成直式會失去「同一天的三個時段並排」這個結構，
+	   那兩張維持橫向捲動。 */
+	.uappt-wrap .uappt-table:not(.uappt-table--matrix) {
+		display: block;
+		max-width: 100%;
+	}
+
+	/* 欄位名稱改由每一格的 data-label 呈現，表頭就不需要了。 */
+	.uappt-wrap .uappt-table:not(.uappt-table--matrix) > thead {
+		display: none;
+	}
+
+	.uappt-wrap .uappt-table:not(.uappt-table--matrix) > tbody {
+		display: block;
+	}
+
+	/* 一列＝一筆紀錄。用髮絲線分隔而不是各自做成一張小卡片：這些表格有的
+	   直接放在頁面上、有的包在 .uappt-panel 裡，做成卡片在面板裡會變成
+	   卡中卡；分隔線兩種情境下看起來都一致。 */
+	.uappt-wrap .uappt-table:not(.uappt-table--matrix) > tbody > tr {
+		display: block;
+		padding: var(--uappt-space-3) 20px;
+		border-top: 1px solid var(--uappt-color-border);
+	}
+
+	.uappt-wrap .uappt-table:not(.uappt-table--matrix) > tbody > tr:first-child {
+		border-top: none;
+	}
+
+	/* hover 高亮在觸控裝置上沒有意義，而且會在點擊後殘留。 */
+	.uappt-wrap .uappt-table:not(.uappt-table--matrix) > tbody > tr:hover {
+		background: transparent;
+	}
+
+	.uappt-wrap .uappt-table:not(.uappt-table--matrix) > tbody > tr > td {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: baseline;
+		gap: 2px var(--uappt-space-2);
+		padding: 3px 0;
+		border: none;
+	}
+
+	/* 標籤欄固定 7em：中文沒有詞界，寬度不夠時「同時可服務人數」會被折成
+	   「同時可服務／人數」、「24 小時營業」折成「24 小時營／業」，看起來像
+	   壞掉而不是換行。7em（12px 字約 84px）剛好容得下全站最長的欄位名稱，
+	   固定寬度也讓同一張卡片裡每個值都對齊在同一條垂直線上。 */
+	.uappt-wrap .uappt-table:not(.uappt-table--matrix) > tbody > tr > td::before {
+		content: attr(data-label);
+		flex: 0 0 7em;
+		color: var(--uappt-color-text-muted);
+		font-size: 12px;
+		font-weight: 600;
+	}
+
+	/* 勾選欄、colspan 的整列儲存格（空狀態訊息、排班申請的逐日明細）沒有
+	   欄位名稱，不要留一塊空的標籤欄出來。 */
+	.uappt-wrap .uappt-table:not(.uappt-table--matrix) > tbody > tr > td:not([data-label])::before {
+		content: none;
+	}
+
+	/* 不能勾選的列，勾選欄是空的——直式堆疊後那會變成一條沒有內容卻佔著
+	   高度的空行。 */
+	.uappt-wrap .uappt-table:not(.uappt-table--matrix) > tbody > tr > td.check-column:empty {
+		display: none;
+	}
+
+	.uappt-wrap .uappt-table:not(.uappt-table--matrix) > tbody > tr > td.check-column {
+		padding: 0 0 var(--uappt-space-1);
+	}
+
+	/* 操作欄這類「內容本身就是一串用 ｜ 隔開的連結與行內表單」的儲存格：
+	   整格退回一般的區塊流，標籤自己一行、內容照原本的行內排版走。
+	   ⚠️ 不能讓它留在 flex 版面裡——flex 會把每一個 <form>、每一段
+	   `&nbsp;|&nbsp;` 都變成獨立的 flex 項目，再各自吃一次 gap，分隔線
+	   兩側就多出雙倍空白，「編輯 ｜ 停用 ｜ 刪除」會散成一排孤島。 */
+	.uappt-wrap .uappt-table:not(.uappt-table--matrix) > tbody > tr > td.uappt-cell-block {
+		display: block;
+		padding-top: var(--uappt-space-2);
+	}
+
+	.uappt-wrap .uappt-table:not(.uappt-table--matrix) > tbody > tr > td.uappt-cell-block::before {
+		display: block;
+		margin-bottom: var(--uappt-space-1);
+	}
+
+	.uappt-wrap .uappt-table:not(.uappt-table--matrix) > tbody > tr > td[colspan] {
+		padding: 0;
+	}
+
+	/* 逐日明細（表中表）：外層那一列已經有 20px 內距，巢狀表格自己不要
+	   再縮一次，不然層層縮排到最後沒剩多少寬度。 */
+	.uappt-wrap .uappt-table:not(.uappt-table--matrix) .uappt-table > tbody > tr {
+		padding-left: 0;
+		padding-right: 0;
+	}
+
+	/* --- 報表的數值矩陣：橫向捲動 ＋ 凍結第一欄（v2.59.0）---
+
+	   v2.19.2 當初從「橫向捲動」改成「直式堆疊」，理由是**捲到右邊時第一欄
+	   會捲出畫面，看到「狀態」的時候已經不知道那是哪一筆**。那個理由對，
+	   但它針對的是捲動本身沒有錨點，不是捲動這件事。`position: sticky` 把
+	   第一欄釘住之後，那個理由就不成立了——而堆疊在報表上帶來的損失（不能
+	   跨列比較同一個指標）比它解決的問題更大。
+
+	   ⚠️ sticky 需要一個**可捲動的祖先**當參考，所以捲動容器是表格外面那層
+	   .uappt-table-scroll，不是表格自己。套在表格上會變成「整張表跟著捲」，
+	   第一欄一樣釘不住。 */
+	.uappt-table-scroll {
+		overflow-x: auto;
+		-webkit-overflow-scrolling: touch;
+		/* 捲動容器的邊界就是內容的邊界，左右不要再多一層內距，不然凍結欄
+		   釘住的位置會跟表格左緣差一截。 */
+		margin: 0;
+	}
+
+	.uappt-wrap .uappt-table--matrix {
+		/* 不換行，欄寬由內容決定——這正是要橫向捲動的原因。 */
+		width: auto;
+		min-width: 100%;
+		white-space: nowrap;
+	}
+
+	.uappt-wrap .uappt-table--matrix th,
+	.uappt-wrap .uappt-table--matrix td {
+		padding: 8px 10px;
+	}
+
+	/* 第一欄（日期／人員／收款方式…）釘在左邊。
+	   ⚠️ 一定要給不透明底色：sticky 元素只是停在原位，後面的欄位會從它
+	   **底下**捲過去，沒有底色就會兩層字疊在一起。條紋列與合計列的底色
+	   各不相同，所以三種狀態各自指定一次。 */
+	.uappt-wrap .uappt-table--matrix > thead > tr > th:first-child,
+	.uappt-wrap .uappt-table--matrix > tbody > tr > td:first-child,
+	.uappt-wrap .uappt-table--matrix > tfoot > tr > th:first-child {
+		position: sticky;
+		left: 0;
+		z-index: 2;
+		background: var(--uappt-surface);
+		/* 釘住的那一欄與捲動中的內容之間要有一條界線，不然捲到一半會看不
+		   出哪裡是凍結欄的邊緣。 */
+		box-shadow: 1px 0 0 var(--uappt-color-border-subtle);
+	}
+
+	.uappt-wrap .uappt-table--matrix > tbody > tr.alternate > td:first-child,
+	.uappt-wrap .uappt-table--matrix > tbody > tr:nth-child(odd) > td:first-child {
+		background: var(--uappt-surface-subtle);
+	}
+
+	.uappt-wrap .uappt-table--matrix > thead > tr > th:first-child,
+	.uappt-wrap .uappt-table--matrix > tfoot > tr > th:first-child {
+		background: #f0f0f1;
+	}
+
+	/* 捲動提示：右緣一道漸層，暗示「右邊還有東西」。捲到底時看不到，
+	   因為它是貼在容器上、跟著內容一起捲出去的。 */
+	.uappt-table-scroll {
+		background:
+			linear-gradient(to right, transparent, rgba(0, 0, 0, 0.06)) right center / 12px 100% no-repeat;
+	}
+
+	/* --- 合計列也要拆成直式（v2.58.0）---
+	   原本的堆疊規則只寫了 `> tbody > tr`，`<tfoot>` 被漏掉：實測 428px 寬
+	   時它仍然是 `display: table-row`，七個欄位硬擠在一列，「合計」被折成
+	   上下兩個字、最後一欄的金額剛好頂在畫面邊緣。整張表最重要的那一列
+	   反而是唯一讀不了的一列。 */
+	.uappt-wrap .uappt-table:not(.uappt-table--matrix) > tfoot {
+		display: block;
+	}
+
+	/* 合計不是「又一筆紀錄」，是整張表的結論——給它實心一點的上框線與
+	   淡底色，捲到表尾時一眼看得出資料結束了。 */
+	.uappt-wrap .uappt-table:not(.uappt-table--matrix) > tfoot > tr {
+		display: block;
+		padding: var(--uappt-space-3) 20px;
+		background: var(--uappt-surface-subtle);
+		border-top: 2px solid var(--uappt-color-border);
+	}
+
+	.uappt-wrap .uappt-table:not(.uappt-table--matrix) > tfoot > tr > th {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: baseline;
+		gap: 2px var(--uappt-space-2);
+		padding: 3px 0;
+		border: none;
+		text-align: left;
+		/* WP 的 .widefat tfoot th 自己帶 #f0f0f1，比這一列的 #f6f7f7 深一階。
+		   直式堆疊後每一格都變成整行寬，結果是「合計」那一格（沒有 data-label、
+		   底色來自 tr）比下面六格淺，看起來像兩塊不同的區域黏在一起。整列
+		   統一交給 tr 的底色。 */
+		background: transparent;
+	}
+
+	.uappt-wrap .uappt-table:not(.uappt-table--matrix) > tfoot > tr > th::before {
+		content: attr(data-label);
+		flex: 0 0 7em;
+		color: var(--uappt-color-text-muted);
+		font-size: 12px;
+		font-weight: 600;
+	}
+
+	/* 第一格（「合計」兩個字）沒有 data-label，讓它當整塊的標題。 */
+	.uappt-wrap .uappt-table:not(.uappt-table--matrix) > tfoot > tr > th:not([data-label]) {
+		display: block;
+		margin-bottom: var(--uappt-space-1);
+		font-size: 14px;
+	}
+
+	.uappt-wrap .uappt-table:not(.uappt-table--matrix) > tfoot > tr > th:not([data-label])::before {
+		content: none;
+	}
+
+	/* 收款方式設定表：標籤一律獨佔一行。
+	   通用規則是「標籤 7em ＋ 值接在右邊」，那對「一個短字串」剛剛好，但
+	   這張表每一格都是輸入控制項——名稱欄與下拉太寬會自己折到第二行，只有
+	   費率那個 6em 的小框擠得進去，三列的對齊方式就各不相同，看起來像沒
+	   做完。統一成標籤在上、控制項在下。 */
+	/* ⚠️ 選擇器一定要帶 .uappt-table：上面那條通用規則是
+	   `.uappt-table:not(.uappt-table--matrix) > … > td::before`（三個 class），這裡原本
+	   只有兩個 class，權重輸給它——寫在後面也沒用，從寫好那天起就沒生效過，手機上
+	   標籤一直擠在左邊（v2.96.1 全面檢查時量到）。 */
+	.uappt-wrap .uappt-table.uappt-payment-table:not(.uappt-table--matrix) > tbody > tr > td::before,
+	.uappt-wrap .uappt-table.uappt-commission-table:not(.uappt-table--matrix) > tbody > tr > td::before {
+		flex: 0 0 100%;
+	}
+
+	.uappt-wrap .uappt-payment-table > tbody > tr > td > input[type="text"],
+	.uappt-wrap .uappt-payment-table > tbody > tr > td > select {
+		width: 100%;
+		max-width: none;
+	}
+
+	/* 損益階梯：把「漲跌」那一欄拿掉自己的位置，讓它跟著金額換行——
+	   375px 下四欄並排會把名目擠成兩行。 */
+	.uappt-wrap .uappt-pl-row {
+		grid-template-columns: 1fr minmax(0, 7.5em) 3.2em;
+	}
+
+	.uappt-wrap .uappt-pl-delta {
+		grid-column: 2 / -1;
+		text-align: right;
+	}
+
+	/* --- 摘要卡片改成兩欄（v2.58.0）---
+	   這是手機版特有的問題，桌面版沒有：一張卡片一列時，收款頁的七張卡片
+	   實測共 705px 高——比 812px 的手機螢幕還要接近滿版，使用者得先捲過
+	   一整屏的大字才看得到第一張表。兩欄之後約 340px，一屏內看得完。
+	   桌面版的 auto-fit 本來就排得下五、六張，不需要動。
+	   ⚠️ minmax(0, 1fr) 不是 1fr：`1fr` 等於 `minmax(auto, 1fr)`，欄位不會
+	   縮到比內容更窄，長金額字串會把格線撐破（v2.57.0 的月曆踩過同一個坑）。 */
+	.uappt-wrap .uappt-dash-cards {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		gap: var(--uappt-space-2);
+	}
+
+	.uappt-wrap .uappt-dash-card {
+		padding: 12px 14px;
+	}
+
+	/* 2em 的數字在半個螢幕寬的卡片裡放不下七位數的金額。1.4em 量起來
+	   NT$1,234,567 仍然是一行。 */
+	.uappt-wrap .uappt-dash-card-value {
+		font-size: 1.4em;
+	}
+
+	/* --- 期間快捷鍵改成三欄（v2.58.0）---
+	   六顆按鈕在 375px 用 flex-wrap 會排成 5 + 1，最後一顆孤零零在第二列，
+	   看起來像沒排好。三欄固定成整齊的兩列。
+	   跟上方的頁籤不同，這裡刻意**不**做成橫向捲動：頁籤有十個以上、而且
+	   使用者知道自己在找哪一個；期間只有六個，全部看得見比較容易比較。 */
+	.uappt-wrap .uappt-period-presets {
+		display: grid;
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+		gap: var(--uappt-space-2);
+	}
+
+	.uappt-wrap .uappt-period-presets .button {
+		width: 100%;
+		text-align: center;
+	}
+
+	/* 「顯示顆粒」那一行的說明標籤要獨佔一列，不然它會吃掉第一格，
+	   後面三顆按鈕就變成 2 + 1。 */
+	.uappt-wrap .uappt-period-presets-label {
+		grid-column: 1 / -1;
+		margin-right: 0;
+	}
+
+	/* 「拆解方式」是四個選項，套三欄會變成 3 + 1 的孤兒；兩欄剛好 2 × 2。
+	   期間快捷鍵是六個，維持三欄。
+	   ⚠️ 這條**必須排在上面那條三欄規則後面**：兩者特異性相同（都是
+	   `.uappt-wrap` ＋ 一個 class），同分時由後者勝出。一開始寫在前面，
+	   結果是整排照樣排成三欄，而且不會有任何錯誤訊息。 */
+	.uappt-wrap .uappt-period-presets--views {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+
+	/* 二維輸入矩陣維持橫向捲動：拆成直式會失去「同一天三個時段並排」的
+	   結構，那正是這張表要表達的東西。 */
+	.uappt-wrap .uappt-segments-table {
+		display: block;
+		max-width: 100%;
+		overflow-x: auto;
+		-webkit-overflow-scrolling: touch;
+	}
+
+	/* 手動建立預約頁「會員（選填）」欄位：WooCommerce 的客人搜尋元件
+	   （wc-customer-search／select2）用 inline style="width: 400px" 寫死
+	   寬度，這是 WooCommerce 核心自己的輸出，這支外掛管不到。
+	   ⚠️ 光是 `max-width: 100% !important` 蓋不掉它——問題不在特異性，
+	   是「百分比沒有可以參照的定值」：`<table class="form-table">` 是
+	   `table-layout: auto`，WP 核心在這個寬度已經把 th/td 改成
+	   `display: block`（欄位在手機上是標籤在上、輸入框在下地疊起來，
+	   這部分 WP 核心早就處理好了），但 <table> 自己還是 `display: table`，
+	   在 auto 版面下它的寬度是照著「最寬的儲存格內容」（也就是那顆
+	   400px 的 select2）反推回去算，不是照著容器寬度算，於是整張表格被
+	   撐到 420px，超出 375px 的裝置寬度。表格外沒有東西幫忙裁切
+	   （`.uappt-form` 不像 `.uappt-panel` 有 overflow: hidden），所以是真的
+	   整段被撐出螢幕外，不是視覺上的巧合。
+	   表格本身先被撐寬之後，裡面的 td 才會跟著被撐寬，這時候 td 的寬度
+	   同樣沒有「定值」，select2 的 `max-width: 100%` 就沒有基準可以算，
+	   等於形同虛設。根源要往上修：把 form-table 自己釘成 `width: 100%` ＋
+	   `table-layout: fixed`，表格的寬度不再由內容反推，改成直接等於容器
+	   寬度；td 因此有了定值寬度，select2 的 100% 才總算算得出來。 */
+	.uappt-wrap .form-table {
+		width: 100%;
+		table-layout: fixed;
+	}
+
+	.uappt-wrap .select2-container {
+		max-width: 100% !important;
+	}
+
+	/* --- 兩層導覽：改成單行橫向捲動（v2.52.0）---
+	   WP 核心在這個寬度把 nav-tab 拆成一顆一顆會換行的方塊
+	   （`.nav-tab-wrapper { border-bottom: 0 }` ＋ 每顆 tab 自己補下框線）。
+	   七個區塊在 375px 下折成兩排、佔掉 101px——比內容區的第一個元件還高，
+	   而且「導覽有幾排」會隨著開了哪些模組而變，頁面的起點跟著浮動。
+	   改成不換行＋橫向捲動：導覽永遠是一行，高度固定，捲到一半被切斷的
+	   那顆 tab 自己就是「右邊還有」的提示。
+	   ⚠️ 只做到這裡的話，停在最後一個區塊（設定）時進頁面會看不到自己在哪
+	   ——目前所在的那顆要捲進視野，那是 admin-nav.js 在做的事。 */
+	.uappt-wrap .nav-tab-wrapper.uappt-section-nav,
+	.uappt-wrap .subsubsub.uappt-settings-tabs {
+		display: flex;
+		flex-wrap: nowrap;
+		overflow-x: auto;
+		/* 捲軸自己會佔掉高度、又只在捲動時才有意義，藏起來；鍵盤與觸控的
+		   捲動都不受影響。 */
+		scrollbar-width: none;
+		-webkit-overflow-scrolling: touch;
+	}
+
+	/* ⚠️ 上下要留白給焦點框。`overflow-x: auto` 會讓**另一軸**的 visible 一起
+	算成 auto（CSS 規範：兩軸只要有一軸不是 visible，另一軸的 visible 就
+	計算成 auto），所以這兩個容器連上下也會裁切。
+	WordPress 的焦點框畫在邊框**外面** 3px，而這兩排頁籤原本緊貼容器（實測
+	餘裕剛好 0px），於是點一下只剩左右兩條藍線、上下被裁掉，看起來就是破圖。
+	4px ＝ 3px 的框再加 1px 餘裕。 */
+	.uappt-wrap .nav-tab-wrapper.uappt-section-nav {
+		padding-top: 9px;
+		padding-bottom: 4px;
+	}
+
+	.uappt-wrap .subsubsub.uappt-settings-tabs {
+		padding-top: 4px;
+		padding-bottom: 4px;
+	}
+
+	.uappt-wrap .nav-tab-wrapper.uappt-section-nav::-webkit-scrollbar,
+	.uappt-wrap .subsubsub.uappt-settings-tabs::-webkit-scrollbar {
+		display: none;
+	}
+
+	/* 底線頁籤在手機版維持同一套外觀，只是不換行；字級放大到 16px，跟終極
+	電商在小螢幕的處理一致（twshop 在 480px 以下也是 16px）——這排是整個
+	後台最常點的東西，13px 在手機上按起來要瞄。 */
+	.uappt-wrap .uappt-section-nav .nav-tab {
+		flex: 0 0 auto;
+		margin: 0;
+		font-size: 15px;
+		white-space: nowrap;
+	}
+
+	.uappt-wrap .uappt-section-nav .nav-tab.nav-tab-active {
+		margin-bottom: -1px;
+	}
+
+	/* --- 第二層頁籤：字放大好按，豎線保留 ---
+	v2.52.0 曾經把這一層縮到 13px 去修「第二層比第一層大」的階層反轉，但那是
+	用錯誤的方式解對的問題——**階層現在由形狀表達**（上面是底線頁籤、這裡是
+	文字連結），不需要再靠字級去分，縮字只是讓最常點的東西變難點。
+	兩層一起放大到 15px。
+
+	v2.54.0 曾經在手機版把豎線拿掉，理由是「夾在兩個觸控目標之間會分不出按到
+	哪一個」——那個理由是錯的：**豎線不是觸控目標，只是視覺元素**。真正讓兩個
+	可點區域黏在一起的是連結沒有內距，而那個由下面的 12px 左右內距解決了。
+	拿掉豎線反而製造了一個沒有理由的差異：同一個元件在桌面有豎線、在手機沒有。
+	現在兩邊都有。
+
+	間距全部交給豎線自己的外距、容器 gap 設 0：豎線在 <li> 裡面、跟在連結後面，
+	如果改用 gap 拉開，間隔只會加在豎線的**右邊**，看起來就會偏向前一項。 */
+	.uappt-wrap .subsubsub.uappt-settings-tabs {
+		gap: 0;
+		font-size: 15px;
+	}
+
+	.uappt-wrap .uappt-settings-tabs > li {
+		flex: 0 0 auto;
+		float: none;
+		white-space: nowrap;
+	}
+
+	/* 比桌面的 4px 寬一階：這裡的連結多了 12px 左右內距，豎線要跟著往外站
+	才不會貼在「目前所在」那塊淡底的圓角上。 */
+	.uappt-wrap .uappt-settings-tabs > li:not(:last-child)::after {
+		margin: 0 var(--uappt-space-2);
+	}
+
+	/* 內距是觸控目標的來源，不是字級——字級只決定看不看得清楚。 */
+	.uappt-wrap .uappt-settings-tabs a {
+		display: inline-block;
+		padding: var(--uappt-space-2) var(--uappt-space-3);
+		line-height: 28px;
+	}
+
+	/* 目前所在的那一項給一塊淡底。這個差異（桌面沒有、手機有）是**有理由**的：
+	手機版這排是橫向捲動的，可能捲到一半才看到，需要一眼認出「我在哪」，填色
+	比粗體好認得多；桌面不會捲，粗體就夠了。 */
+	.uappt-wrap .uappt-settings-tabs a.current {
+		background: var(--uappt-color-primary-bg);
+		border-radius: var(--uappt-radius-sm);
+	}
+
+	/* --- 批次排班月曆：手機版只留「哪一天」---
+	375px 下一格只有 43px 寬。那個寬度放不下「00:00–23:00」，硬放就是每格擠成
+	三四行、整張月曆高得要捲很久。而這張月曆在手機上的工作只有一件事：**挑日子**
+	——要看某天幾點上班，下面的清單本來就列著。
+	休假徽章保留：它解釋了那天為什麼是空的，而且只有兩個字。 */
+	.uappt-wrap .uappt-cal-range,
+	.uappt-wrap .uappt-cal-source,
+	.uappt-wrap .uappt-cal-count {
+		display: none;
+	}
+
+	/* ⚠️ 上面那段註解寫著「要看某天幾點上班，下面的清單本來就列著」——**那個清單
+	   已經不列了**（排除樣板列），v4 階段 4 還要整個拿掉。只留日期數字的話，手機
+	   上完全看不出一天是早班還是晚班，而這張月曆現在就是排班的主畫面。
+	   改成印短標籤：班別名兩個字放得下，對不上就印開始時間。 */
+	/* ⚠️ 選擇器要帶 `.uappt-cal-day`（0,3,0）壓過檔尾那條桌機版的
+	   `.uappt-wrap .uappt-cal-short`（0,2,0）。**@media 不影響特異性**——同權重時
+	   贏的是「寫在後面的那條」，而桌機那條在這個 media query 後面一千行。
+	   這個外掛已經為同權重 ＋ 載入順序踩過兩次（v2.82.0 的面板接合、v2.19.x 的
+	   手機版標題），不要留第三個。 */
+	.uappt-wrap .uappt-cal-day .uappt-cal-short {
+		display: block;
+		overflow: hidden;
+		color: var( --uappt-color-text-muted );
+		font-size: 11px;
+		line-height: 1.3;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.uappt-wrap .uappt-cal-day {
+		min-height: 52px;
+		padding: 4px;
+	}
+
+	/* 勾選框改回左上角、日期數字讓位：右下角的勾選框在 43px 的格子裡會跟
+	   日期數字重疊。 */
+	.uappt-wrap .uappt-cal-day .uappt-cal-checkbox {
+		align-self: flex-start;
+		margin: 0 0 2px;
+	}
+
+	/* --- 篩選列：預設收起，展開後是一格一格的欄位 ---
+	手機版這塊的問題不是「擠」而已，是**看不懂**：控制項全部只有值沒有名字
+	（「所有人員」是目前的值，不是欄位名），日期只標「從」「到」但沒說是哪
+	一種日期，每一格的寬度又是上一格用剩多少決定的，所以沒有兩格對齊。
+	再加上整塊佔掉第一屏——要捲過整個篩選器才看得到第一筆資料，而多數時候
+	進來只是想看清單。
+
+	所以手機版做兩件事：**預設收起來**（有生效的條件時才自動展開，並在標題
+	上標幾項），展開之後**每一格都有欄位名稱、等寬對齊**。 */
+
+	/* 開關本體在手機版改成「看不見但仍然對得到焦點」，不是 display: none——
+	後者會讓鍵盤完全無法展開這一塊。焦點的視覺回饋畫在標題上（見下面）。 */
+	.uappt-wrap .uappt-filters input[type="checkbox"].uappt-filters-toggle {
+		display: block;
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		min-width: 0;
+		margin: -1px;
+		padding: 0;
+		overflow: hidden;
+		clip-path: inset(50%);
+		border: 0;
+		appearance: none;
+	}
+
+	/* 收合標題：桌面版的 display: none 在這裡解除。長得像按鈕而不是連結——
+	它的行為是展開／收合，不是跳到別的地方。
+	⚠️ 選擇器要湊到跟關掉它的那條一樣具體（`.uappt-filters label.uappt-filters-summary`
+	是 (0,2,1)）。少一個 label 就是 (0,2,0)，**在 media query 裡也一樣會輸**
+	——@media 不影響特異性，結果是手機版連標題都不見，整塊變成一個 26px 的
+	空灰條。 */
+	.uappt-wrap .uappt-filters label.uappt-filters-summary {
+		display: flex;
+		align-items: center;
+		gap: var(--uappt-space-2);
+		padding: var(--uappt-space-2) var(--uappt-space-3);
+		background: var(--uappt-surface);
+		border: 1px solid var(--uappt-color-border);
+		border-radius: var(--uappt-radius-sm);
+		color: var(--uappt-color-text);
+		font-size: 13px;
+		font-weight: 600;
+		cursor: pointer;
+	}
+
+	/* 收起時的小三角，展開後轉 90 度——這是唯一會告訴使用者「這塊還有東西
+	藏著」的訊號，沒有它就只是一顆看不出用途的按鈕。 */
+	.uappt-wrap .uappt-filters-summary::before {
+		content: "";
+		width: 0;
+		height: 0;
+		border-left: 5px solid currentColor;
+		border-top: 4px solid transparent;
+		border-bottom: 4px solid transparent;
+		transition: transform .15s ease;
+	}
+
+	.uappt-wrap .uappt-filters-toggle:checked ~ .uappt-filters-summary::before {
+		transform: rotate(90deg);
+	}
+
+	/* 開關本身看不見，焦點框要畫在使用者看得到的那一塊上，否則用鍵盤 Tab
+	   過來會完全不知道焦點在哪。 */
+	.uappt-wrap .uappt-filters-toggle:focus-visible ~ .uappt-filters-summary {
+		box-shadow: var(--uappt-focus-ring);
+	}
+
+	/* 「目前有幾項條件生效」。這個數字是收起來之後唯一的線索——沒有它，
+	使用者會分不出「現在看到的是全部」還是「被我上次篩過的一小部分」。 */
+	.uappt-wrap .uappt-filters-count {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		min-width: 18px;
+		height: 18px;
+		padding: 0 5px;
+		border-radius: 9px;
+		background: var(--uappt-color-primary);
+		color: #fff;
+		font-size: 11px;
+	}
+
+	/* 收合本體。可收合的表單（有開關的那些）預設不顯示內容；不可收合的
+	（只有一兩格，收起來比攤開還佔一行）沒有開關，這條選不到，照常顯示。 */
+	.uappt-wrap .uappt-filters-toggle ~ .uappt-filters-grid {
+		display: none;
+	}
+
+	/* --- 展開後的版面 ---
+	改用 grid 而不是 flex 的理由：flex 是「排得下就塞」，格子寬度由剩餘空間
+	決定，所以同一排的兩格常常一大一小，而且成對的東西（期間的起訖）會在
+	某些寬度被拆到不同排——實測 484px 就是這樣，「從」留在第一排最後、
+	「到」自己掉到第二排還被拉成整排寬。
+	grid 是先切好等寬的欄、再把東西放進去，所以每一格永遠等寬、永遠對齊，
+	要佔整排的就明講 `1 / -1`。 */
+	.uappt-wrap .uappt-filters-toggle:checked ~ .uappt-filters-grid,
+	.uappt-wrap .uappt-filters:not(:has( > .uappt-filters-toggle )) > .uappt-filters-grid {
+		display: grid;
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		align-items: end;
+		gap: var(--uappt-space-3) var(--uappt-space-2);
+		margin-top: var(--uappt-space-3);
+	}
+
+	/* 每一格變成「名稱在上、控制項在下」。 */
+	.uappt-wrap .uappt-filters .uappt-field {
+		flex-direction: column;
+		align-items: stretch;
+		gap: var(--uappt-space-1);
+		min-width: 0;
+	}
+
+	/* 欄位名稱在手機版現身（桌面版是 .screen-reader-text 那種藏法）。 */
+	.uappt-wrap .uappt-filters .uappt-field-label {
+		position: static;
+		width: auto;
+		height: auto;
+		margin: 0;
+		overflow: visible;
+		clip-path: none;
+		color: var(--uappt-color-text-muted);
+		font-size: 12px;
+		font-weight: 600;
+	}
+
+	/* 控制項填滿自己那一格，寬度就不再由內容決定。
+	⚠️ min-width: 0 不能省：格子裡的元素預設縮不到比內容更小，而
+	`<input type="date">` 光是 2026/09/18 加日曆圖示就超過 150px。 */
+	.uappt-wrap .uappt-filters .uappt-field > select,
+	.uappt-wrap .uappt-filters .uappt-field > input[type="date"],
+	.uappt-wrap .uappt-filters .uappt-field > input[type="search"],
+	.uappt-wrap .uappt-filters .uappt-field > input[type="text"],
+	.uappt-wrap .uappt-filters .uappt-field-row > input[type="date"] {
+		width: 100%;
+		min-width: 0;
+	}
+
+	/* 佔滿整排的幾種格子：
+	- 期間：裡面是兩個輸入框，半排放不下，而且拆開就不再是一個概念
+	- 關鍵字：全站最長的輸入
+	- 勾選項：後面跟著一整句話
+	- 動作列：送出鍵要好按 */
+	.uappt-wrap .uappt-filters .uappt-field-wide,
+	.uappt-wrap .uappt-filters .uappt-field-range,
+	.uappt-wrap .uappt-filters .uappt-field-check,
+	.uappt-wrap .uappt-filters .uappt-field-actions {
+		grid-column: 1 / -1;
+	}
+
+	/* 起訖兩格等寬——這是「對齊」最看得出來的一處，也是原本最亂的一處。 */
+	.uappt-wrap .uappt-filters .uappt-field-row > input[type="date"] {
+		flex: 1 1 0;
+	}
+
+	/* 勾選項維持「方塊在左、文字在右」的橫向排法，不要跟著變成直式。 */
+	.uappt-wrap .uappt-filters .uappt-field-check {
+		flex-direction: row;
+		align-items: center;
+	}
+
+	/* 動作列：跟上面的欄位之間拉一條髮絲線。輸入是一組、送出是另一組，
+	沒有這條線的話送出鍵讀起來像「最後一個欄位」。 */
+	.uappt-wrap .uappt-filters .uappt-field-actions {
+		flex-direction: row;
+		align-items: center;
+		gap: var(--uappt-space-3);
+		margin-top: var(--uappt-space-1);
+		padding-top: var(--uappt-space-3);
+		border-top: 1px solid var(--uappt-color-border-subtle);
+	}
+
+	.uappt-wrap .uappt-filters .uappt-field-actions .button:not(.button-link),
+	.uappt-wrap .uappt-filters .uappt-field-actions input[type="submit"] {
+		flex: 1 1 auto;
+		text-align: center;
+	}
+
+	/* --- 功能模組的每一列：開關與名稱一排，說明換到下面 ---
+	   桌面版是「開關 ｜ 名稱 ｜ 說明」三欄。375px 下說明欄只剩 145px，
+	   每一句都被折成四五行的窄長條，而名稱欄還空著一大半。 */
+	.uappt-module-row {
+		flex-wrap: wrap;
+	}
+
+	/* 縮排對齊上一行的名稱（開關 44px ＋ gap 16px），說明才看得出是掛在
+	   那個模組底下，而不是另起一段。 */
+	.uappt-module-row .uappt-module-desc {
+		flex: 1 1 100%;
+		padding-left: 60px;
+	}
+}
+
+/* --- 通知卡片設定與預覽（v2.73.0）---
+   左欄是設定欄位、右欄是預覽。並排的理由跟報表的「拆解方式」不同：這裡改一個
+   欄位就要立刻看到卡片變化，上下排的話改完要捲動才看得到，回饋就斷了。 */
+/* 預覽與表格是兄弟元素，外側留白由共同容器提供，換行後也不會貼框。 */
+.uappt-card-settings {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 24px;
+	align-items: flex-start;
+	padding: 0 20px 20px;
+}
+
+.uappt-card-settings-fields {
+	flex: 1 1 380px;
+	min-width: 0;
+}
+
+/* 容器已有 20px，取消這張表格的外側內距，避免重複留白。 */
+.uappt-wrap .uappt-card-settings-fields th {
+	padding-left: 0;
+}
+
+.uappt-wrap .uappt-card-settings-fields td {
+	padding-right: 0;
+}
+
+.uappt-card-preview-pane {
+	flex: 0 1 300px;
+	min-width: 0;
+	max-width: 100%;
+}
+
+.uappt-card-preview-head {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin: 0 0 10px;
+	font-weight: 600;
+}
+
+/* 標題與按鈕文字各有好幾格，用固定寬度的標籤讓輸入框對齊成一直行。 */
+.uappt-card-title-row {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+.uappt-card-title-row > span {
+	flex: 0 0 96px;
+	color: #50575e;
+}
+
+.uappt-card-title-row > input {
+	flex: 1 1 auto;
+	min-width: 0;
+}
+
+.uappt-card-preview {
+	/* 不模擬 LINE 的對話底色：那個藍底會把注意力帶到「這是 LINE」，
+	   但這一區要看的是卡片本身的配色對不對——底色反而變成干擾的對照組。 */
+	padding: 0;
+}
+
+/* 卡片是白底、面板也是白底，所以邊界要自己給。用框線不用陰影，跟
+   .uappt-panel 同一個理由：並排時陰影會讓這一塊看起來浮得比較高。 */
+.uappt-card-preview-bubble {
+	overflow: hidden;
+	border: 1px solid var(--uappt-color-border-strong);
+	border-radius: 12px;
+	background: #fff;
+	font-size: 13px;
+	line-height: 1.5;
+}
+
+.uappt-card-preview-header {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	padding: 14px 16px;
+	color: #fff;
+}
+
+.uappt-card-preview-shop {
+	font-size: 12px;
+	font-weight: 600;
+	opacity: .9;
+}
+
+.uappt-card-preview-title {
+	font-size: 17px;
+	font-weight: 600;
+	overflow-wrap: anywhere;
+}
+
+.uappt-card-preview-body {
+	padding: 14px 16px;
+}
+
+.uappt-card-preview-greeting {
+	margin: 0 0 10px;
+	overflow-wrap: anywhere;
+}
+
+.uappt-card-preview-body hr {
+	margin: 0 0 10px;
+	border: 0;
+	border-top: 1px solid #eee;
+}
+
+/* 標籤欄固定寬度，值才會對齊成一直行——跟 Flex 那邊 flex:2/4 的用意相同。 */
+.uappt-card-preview-row {
+	display: flex;
+	gap: 10px;
+	margin-bottom: 6px;
+}
+
+.uappt-card-preview-label {
+	flex: 0 0 68px;
+	color: #8c8c8c;
+}
+
+.uappt-card-preview-value {
+	flex: 1 1 auto;
+	min-width: 0;
+	color: #111;
+	overflow-wrap: anywhere;
+}
+
+.uappt-card-preview-footer {
+	padding: 0 16px 16px;
+}
+
+.uappt-card-preview-btn {
+	display: block;
+	padding: 9px;
+	border-radius: 6px;
+	color: #fff;
+	font-weight: 600;
+	text-align: center;
+}
+
+@media (max-width: 782px) {
+	.uappt-wrap .uappt-card-settings-fields th {
+		padding-right: 0;
+	}
+
+	.uappt-wrap .uappt-card-settings-fields td {
+		padding-left: 0;
+	}
+
+	.uappt-card-preview-pane {
+		flex-basis: 100%;
+	}
+}
+
+/* --- 加入行事曆按鈕（後台預約編輯頁）（v2.75.0） ---
+ *
+ * 跟前端共用同一組 markup（UAPPT_Calendar::render_links( $booking, 'buttons' )），
+ * 但顏色改走後台自己的 --uappt-color-primary，不跟前端的佈景主題色綁在一起。
+ *
+ * 這裡用 buttons 不用 stacked：那格是 form-table 的 td，頁面限寬 960px 扣掉
+ * th 之後還有約 700px，堆疊成兩顆 700px 寬的按鈕很蠢。窄欄才需要堆疊。
+ *
+ * 外框而不是實心，理由跟前端同一條：同一頁上面就有「立即發送提醒」的
+ * .button-secondary，行事曆只是輔助動作，不該搶同樣的份量。 */
+.uappt-wrap .uappt-calendar-links--buttons {
+	display: inline-flex;
+	flex-wrap: wrap;
+	gap: 8px;
+}
+
+.uappt-wrap .uappt-calendar-links--buttons .uappt-calendar-link {
+	display: inline-block;
+	padding: 4px 12px;
+	border: 1px solid var( --uappt-color-primary, #2271b1 );
+	border-radius: 3px;
+	color: var( --uappt-color-primary, #2271b1 );
+	font-size: 13px;
+	line-height: 1.8;
+	text-decoration: none;
+	white-space: nowrap;
+	transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.uappt-wrap .uappt-calendar-links--buttons .uappt-calendar-link:hover,
+.uappt-wrap .uappt-calendar-links--buttons .uappt-calendar-link:focus {
+	background: var( --uappt-color-primary, #2271b1 );
+	color: #fff;
+	box-shadow: none;
+}
+
+/* --- 每週班表（v2.80.0 改版）---
+ *
+ * 改版前是 7 列 × 6 個時間欄位的表格：不管這個人每天固定一段還是七天各不相同，
+ * 看到的都是同一張 42 格的表，再配上 480 字的說明去「阻止」你亂填。
+ *
+ * 現在每天一列，三個時段仍然全部印在 DOM 裡（沒有 JS 時不會退步），只是空的
+ * 第二、三段用 .is-extra 收起來，按「＋加一段」才展開。 */
+/*
+ * 排班方式三選一（v2.93.0）。
+ *
+ * 整列都是點擊區（label 包住 radio 與兩行字）：老人家點字比點那顆小圓點準得多，
+ * 手機上 44px 的觸控高度也是靠整列撐出來的，不是放大 radio 本身。
+ */
+.uappt-kind-choice {
+	display: grid;
+	grid-template-columns: repeat(3, minmax(0, 1fr));
+	gap: 8px;
+	/* 上下都不帶外距：卡片內距已經給了，底下跟著的說明自己帶上外距（下面那條）。
+	   原本的 12px 下外距在新增頁（底下的說明都藏著）會疊在卡片內距上，底部變 32px。 */
+	margin: 0;
+	padding: 0;
+	border: 0;
+}
+
+.uappt-kind-option {
+	display: flex;
+	gap: 10px;
+	align-items: flex-start;
+	min-height: 44px;
+	padding: 10px 12px;
+	border: 1px solid var( --uappt-color-border-strong );
+	border-radius: var( --uappt-radius-md );
+	background: var( --uappt-surface );
+	cursor: pointer;
+}
+
+.uappt-kind-option:has(input:checked) {
+	border-color: var( --uappt-color-primary );
+	box-shadow: 0 0 0 1px var( --uappt-color-primary );
+	background: var( --uappt-color-primary-bg );
+}
+
+.uappt-kind-option input {
+	margin-top: 3px;
+}
+
+.uappt-kind-text {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+}
+
+.uappt-kind-text .description {
+	margin: 0;
+	font-size: 12px;
+}
+
+/* 三欄在手機上擠不下兩行說明字——寬度不夠是這個斷點特有的理由。 */
+@media screen and (max-width: 782px) {
+	.uappt-kind-choice {
+		grid-template-columns: 1fr;
+	}
+}
+
+.uappt-kind-choice ~ .uappt-kind-note {
+	margin-top: 12px;
+}
+
+.uappt-week {
+	border-top: 1px solid var( --uappt-color-muted-bg, #f5f5f5 );
+}
+
+.uappt-week-row {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	padding: 8px 0;
+	border-bottom: 1px solid var( --uappt-color-muted-bg, #f5f5f5 );
+	flex-wrap: wrap;
+}
+
+/* 公休的那幾列淡掉，但**不要用 display:none 或 visibility**——欄位還要能被
+   讀到（勾回「上班」時要還原），而且淡掉比消失更看得出「這天是刻意不排的」。 */
+.uappt-week-row.is-off {
+	opacity: 0.55;
+}
+
+.uappt-week-day {
+	flex: 0 0 46px;
+	font-weight: 600;
+}
+
+.uappt-week-toggle {
+	flex: 0 0 84px;
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	cursor: pointer;
+}
+
+.uappt-week-state {
+	font-size: 13px;
+	color: var( --uappt-color-muted, #646970 );
+}
+
+.uappt-week-ranges {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	flex-wrap: wrap;
+}
+
+.uappt-range {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+}
+
+/* 預先印好但還沒用到的時段。用 display:none 而不是把它從 DOM 拿掉，是為了
+   「＋加一段」只要改 class 就好，不用動態組 HTML（也就不用在 JS 裡複製一份
+   欄位名稱的格式，那種東西一改表單結構就會悄悄失效）。 */
+.uappt-range.is-extra {
+	display: none;
+}
+
+.uappt-week .uappt-time-input {
+	width: 82px;
+	font-variant-numeric: tabular-nums;
+}
+
+.uappt-range-dash {
+	color: var( --uappt-color-muted, #646970 );
+}
+
+/* 跨午夜提示。以前這條規則只寫在 171 字的說明裡，現在一邊打字一邊看得到。 */
+.uappt-range-cross {
+	background: var( --uappt-color-info-bg, #eaf2fb );
+	color: var( --uappt-color-info-ink, #0f4c8a );
+	border-radius: 3px;
+	padding: 1px 6px;
+	font-size: 11px;
+	white-space: nowrap;
+}
+
+.uappt-range-remove {
+	border: 0;
+	background: transparent;
+	color: var( --uappt-color-muted, #646970 );
+	cursor: pointer;
+	font-size: 15px;
+	line-height: 1;
+	padding: 0 2px;
+}
+
+.uappt-range-remove:hover,
+.uappt-range-remove:focus {
+	color: var( --uappt-color-danger, #d63638 );
+}
+
+.uappt-week-actions {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	flex-wrap: wrap;
+	margin: 14px 0 0;
+}
+
+@media ( max-width: 782px ) {
+	/* 窄螢幕：星期與開關各佔一行的上緣，時段整組掉下來。不做「只顯示一段」
+	   之類的差異——那會讓手機上看不到自己設了幾段。 */
+	.uappt-week-row {
+		align-items: flex-start;
+	}
+
+	.uappt-week-ranges {
+		flex: 1 0 100%;
+		padding-left: 46px;
+	}
+}
+
+/* 全店公休的格子（v2.80.0）。跟「這位人員請假」(.is-closed) 用不同底色：
+   看到灰底卻不知道是「他請假」還是「店沒開」，會跑去改錯的地方。 */
+.uappt-cal-day.is-shop-closed {
+	background: var( --uappt-color-danger-bg, #fcf0f1 );
+}
+
+/* --- 月曆的格子可以點進去改那一天（v2.81.0）--- */
+.uappt-cal-day.is-editable {
+	cursor: pointer;
+}
+
+.uappt-cal-day.is-editable:hover,
+.uappt-cal-day.is-editable:focus-visible {
+	box-shadow: inset 0 0 0 2px var( --uappt-color-primary, #2271b1 );
+}
+
+/* 剛點的那一格。跟 :hover 分開是因為捲到表單之後滑鼠早就不在格子上了，
+   沒有這個標記就看不出「我正在改哪一天」。 */
+.uappt-cal-day.is-picked {
+	box-shadow: inset 0 0 0 2px var( --uappt-color-primary, #2271b1 );
+}
+
+/* --- 每月班表：送出鈕搬進面板之後的間距修正（v2.82.1）---
+ *
+ * v2.82.0 把「儲存基本資料與預設班表」移進 .uappt-panel-body（為了讓它不要卡在
+ * 兩張面板中間），踩到兩件事：
+ *
+ * 1. `.uappt-panel .submit` 的 `padding: 0 20px 20px` 是給「送出鈕是面板**直接
+ *    子元素**」用的（那時候要自己補內距）。放進 .uappt-panel-body 之後，那 20px
+ *    疊在 body 自己的 20px 上，按鈕比上面所有內容**多縮排 21px**，看起來像對歪了。
+ * 2. 上面的「套用」鈕、黃色提醒、送出鈕之間只有 12px，三塊擠成一團。
+ *
+ * ⚠️ 選擇器用 (0,3,0) 而不是 `.uappt-panel-body > .submit`(0,2,0)：後者跟
+ * `.uappt-panel .submit`(0,2,0) **同權重**，要靠載入順序決勝。這一版光是面板接合
+ * 就已經踩過一次同權重的坑，不要再留第二個。 */
+.uappt-panel > .uappt-panel-body > .submit {
+	padding: 0;
+	margin-top: var( --uappt-space-5 );
+}
+
+/* 黃色提醒夾在「套用」鈕與送出鈕中間，上下都要留白。只限定這個情境，
+   .uappt-hint 在別處的 12px 不動。 */
+.uappt-week-actions + .uappt-hint {
+	margin-top: var( --uappt-space-5 );
+	margin-bottom: var( --uappt-space-5 );
+}
+
+/* --- 班別（v2.83.0）---
+ *
+ * 班別是「月曆直接排班」的前提：沒有它，在月曆上排一個月就是打 60 個時間欄位。
+ * 計畫見 docs/staff-schedule-v3-plan.md。
+ *
+ * ⚠️ **刻意不動 `td` 的 display。** 設定頁那張表同時掛著 .uappt-table，而
+ * .uappt-table 在 782px 以下會被改成直式卡片（td 變 block、用 data-label 當標
+ * 題）。在這裡改 td 的 display 會跟那套規則打架，所以間距一律掛在 .uappt-range
+ * 自己身上——它是 inline-flex，自然會排成一列、不夠寬就換行，兩個斷點拿到的是
+ * 同一套行為，不需要為手機版另寫一條。 */
+.uappt-presets-table .uappt-range {
+	margin-right: var( --uappt-space-2 );
+}
+
+/* 班別名稱不吃 regular-text 的 25em（量出來 250px）。
+ *
+ * 面板本身有寬度上限（量出來 958px，表格那一格只剩 536px），而三組時段要
+ * 606px——名稱欄佔掉 250px 的話第三組一定被擠到第二行。名稱欄收成 160px 之
+ * 後那一格變成 612px，三組剛好排得下，每一列回到一行高。
+ *
+ * 「早班」「晚班」這種名字 160px 綽綽有餘，所以這不是犧牲名稱欄換時段欄，
+ * 是把多餘的寬度還給真正需要的那一欄。 */
+.uappt-presets-table .regular-text {
+	width: 160px;
+}
+
+/* 時間欄位的寬度本來**只**給 `.uappt-week .uappt-time-input`（每週班表那張表），
+   其他地方的同一個控制項都沒吃到：設定頁的班別表格會變成 regular-text 的預設寬度
+   （「09:00」躺在一個 250px 的框裡），而「改這一天」與「批次排班」那兩張表單量出來
+   是 75px——比字串本身還窄 7px，「09:00」會被切掉最後一個 0。
+   同一個控制項在幾個地方各一種寬度沒有任何理由，一起收成 82px。
+   tabular-nums 也跟班表一致：數字等寬，上下兩列的冒號才對得齊。 */
+.uappt-presets-table .uappt-time-input,
+.uappt-day-form .uappt-time-input {
+	width: 82px;
+	font-variant-numeric: tabular-nums;
+}
+
+/* 排班表單上的「套用班別」那一列。它不是欄位，是捷徑，所以跟下面真正的時間
+   欄位之間要有一道間距，否則看起來像同一組輸入。 */
+.uappt-preset-pick-row {
+	display: flex;
+	align-items: center;
+	gap: var( --uappt-space-2 );
+	flex-wrap: wrap;
+	margin: 0 0 var( --uappt-space-4 );
+}
+
+.uappt-preset-pick-label {
+	font-weight: 600;
+	margin-right: var( --uappt-space-1 );
+}
+
+/* 班別表格的手機版（v2.83.0）。
+ *
+ * ⚠️ **這裡的斷點差異有它自己的理由，不是隨手改的**：桌面版把名稱欄壓到 160px
+ * 是因為它要跟三組時段**在同一列競爭寬度**；手機版 .uappt-table 會變成直式卡片，
+ * 名稱與時段各自獨立一行，那個競爭不存在了，160px 就只是一個莫名其妙變窄的欄位。
+ * 所以手機版放回整行寬，跟收款方式表格（.uappt-payment-table）的既有處理一致。 */
+@media ( max-width: 782px ) {
+	.uappt-wrap .uappt-presets-table .regular-text {
+		width: 100%;
+		max-width: none;
+	}
+}
+
+/* --- 月曆排班：先選日子、再選班別（v2.91.0）---
+ *
+ * v2.85.0 的畫筆列（選畫筆 → 點格子）換成「選取 → 動作」。計畫見
+ * docs/staff-admin-v4-plan.md 的 D3。 */
+
+/* 選了畫筆之後整張月曆的點擊意義會變——那是 v2.85.0 的事。現在點格子永遠是
+   「選這一天」，所以游標一律是 pointer，不用靠 class 切換。 */
+.uappt-wrap .uappt-cal-day.is-paintable {
+	cursor: pointer;
+}
+
+/* 選取中的日子：**整格實心主色、字變白、右上角 ✓**（v2.97.0）。
+ *
+ * 原本是 2px 藍色外框＋很淡的藍底（#f0f6fc）——淡藍跟白色（有班）、淺灰（未排班）幾乎
+ * 一樣，剩下的藍框又跟「今天」重複，使用者回報「已選定的日期很難區分」。月曆上已經有
+ * 白、灰、紅三種底色，第四種淡色不管挑哪一個都會跟其中一個太像；實心色塊跟任何一種都
+ * 不像。✓ 是給色弱的人的第二條線索——不能只靠顏色說話。 */
+.uappt-wrap .uappt-cal-day.is-selected {
+	background: var( --uappt-color-primary );
+	border-color: var( --uappt-color-primary );
+	color: #fff;
+}
+
+.uappt-wrap .uappt-cal-day.is-selected .uappt-cal-day-num,
+.uappt-wrap .uappt-cal-day.is-selected .uappt-cal-range,
+.uappt-wrap .uappt-cal-day.is-selected .uappt-cal-short,
+.uappt-wrap .uappt-cal-day.is-selected .uappt-cal-source,
+.uappt-wrap .uappt-cal-day.is-selected .uappt-cal-count,
+.uappt-wrap .uappt-cal-day.is-selected.is-dirty::after {
+	color: #fff;
+}
+
+/* 格子裡的徽章（未排班、例休、待審核）原本是灰底黑字，壓在實心藍上會變成一塊塊補丁。
+   改成半透明白底，讀得到字、也看得出「這格整個被選起來了」。 */
+.uappt-wrap .uappt-cal-day.is-selected .uappt-badge {
+	background: rgba( 255, 255, 255, .22 );
+	border-color: transparent;
+	color: #fff;
+}
+
+.uappt-wrap .uappt-cal-day.is-selected .uappt-cal-today {
+	background: #fff;
+	color: var( --uappt-color-primary );
+}
+
+.uappt-wrap .uappt-cal-day.is-selected::before {
+	content: "✓";
+	position: absolute;
+	top: 4px;
+	right: 4px;
+	width: 18px;
+	height: 18px;
+	border-radius: 50%;
+	background: #fff;
+	color: var( --uappt-color-primary );
+	font-size: 12px;
+	font-weight: 700;
+	line-height: 18px;
+	text-align: center;
+}
+
+/* 星期標題在這裡是「選整欄」的按鈕。它在觸控裝置上是**唯一**的批次手段
+   （拖曳已經拿掉了），所以要看得出來可以點，不能只靠 hover。 */
+.uappt-wrap .uappt-cal-weekday-paint {
+	width: 100%;
+	padding: 4px 0;
+	background: var( --uappt-surface-subtle );
+	border: 1px dashed var( --uappt-color-border );
+	border-radius: var( --uappt-radius-sm );
+	color: inherit;
+	font: inherit;
+	cursor: pointer;
+}
+
+.uappt-wrap .uappt-cal-weekday-paint:hover,
+.uappt-wrap .uappt-cal-weekday-paint:focus-visible {
+	border-color: var( --uappt-color-primary );
+	border-style: solid;
+}
+
+/* 班別選擇列。⚠️ **沒選日子時整列是 hidden（PHP／JS 控制），不是 disabled**：
+   disabled 的按鈕仍然看得到，使用者會去點它然後納悶為什麼沒反應。 */
+.uappt-wrap .uappt-shift-pick {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: var( --uappt-space-2 );
+	margin: var( --uappt-space-4 ) 0 0;
+	padding: var( --uappt-space-3 );
+	background: var( --uappt-color-primary-bg );
+	border-radius: var( --uappt-radius-md );
+}
+
+.uappt-wrap .uappt-shift-pick-label {
+	font-weight: 600;
+}
+
+.uappt-wrap .uappt-shift {
+	display: inline-flex;
+	align-items: baseline;
+	gap: 6px;
+	padding: 8px 14px;
+	background: var( --uappt-surface );
+	border: 1px solid var( --uappt-color-border-strong );
+	border-radius: 999px;
+	color: inherit;
+	font-size: 13px;
+	line-height: 1.4;
+	cursor: pointer;
+}
+
+.uappt-wrap .uappt-shift:hover,
+.uappt-wrap .uappt-shift:focus-visible {
+	background: var( --uappt-color-primary );
+	border-color: var( --uappt-color-primary );
+	color: #fff;
+}
+
+/* 班別的時間比名稱次要，但不能省——「早班」是幾點到幾點，不是每家店都一樣。 */
+.uappt-wrap .uappt-shift-time {
+	opacity: .75;
+	font-variant-numeric: tabular-nums;
+}
+
+.uappt-wrap .uappt-paint-actions {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: var( --uappt-space-3 );
+	margin-top: var( --uappt-space-4 );
+}
+
+/* 「未儲存 N 天」不是裝飾：月曆捲動之後看不到全貌，沒有這個數字就只能靠印象
+   按下送出。 */
+.uappt-wrap .uappt-paint-dirty {
+	padding: 2px 10px;
+	background: var( --uappt-color-warning-bg );
+	border-radius: 999px;
+	color: var( --uappt-color-warning-ink );
+	font-size: 12px;
+	font-weight: 600;
+}
+
+/* 塗過還沒存的格子。
+ *
+ * ⚠️ **內容用 attr() 印，不是讓 JS 組 HTML。** 要在 JS 裡重建
+ * `<span class="uappt-cal-range">` 那一套，等於把 month-grid.php 的結構複製一份
+ * 到 JS 裡，一改版就會悄悄分岔。這裡 JS 只寫一個純文字屬性。
+ *
+ * 順帶的好處：未儲存的樣子跟已存檔的長得不一樣（虛線框 ＋ 這一行字），一眼看得出
+ * 哪幾天還沒存——「整月一次送出」最大的風險就是以為自己存過了。 */
+.uappt-wrap .uappt-cal-day.is-dirty {
+	border-style: dashed;
+	border-color: var( --uappt-color-primary );
+}
+
+.uappt-wrap .uappt-cal-day.is-dirty .uappt-cal-day-body {
+	display: none;
+}
+
+.uappt-wrap .uappt-cal-day.is-dirty::after {
+	content: attr( data-uappt-pending );
+	color: var( --uappt-color-primary );
+	font-size: 11px;
+	line-height: 1.3;
+	overflow-wrap: anywhere;
+}
+
+/* 手機版只印班別名稱，不印時間。
+ *
+ * ⚠️ **這個斷點差異有它自己的理由**：一格在 375px 上大約 46px 寬，
+ * 「09:00–13:00」11 個字在任何合理字級下都排不進一行——硬印的結果是整列被撐成
+ * 三四倍高，而且每個 – 都斷一次行，讀起來比不印還糟。桌機放得下就印完整的。
+ * 時間本來就查得到（按下儲存之後格子會印出來，或點那一天看單日編輯）。 */
+@media ( max-width: 782px ) {
+	.uappt-wrap .uappt-cal-day.is-dirty::after {
+		content: attr( data-uappt-pending-short );
+	}
+}
+
+.uappt-wrap .uappt-paint-actions {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: var( --uappt-space-3 );
+	margin-top: var( --uappt-space-4 );
+}
+
+/* 「未儲存 N 天」不是裝飾：月曆捲動之後看不到全貌，沒有這個數字就只能靠印象
+   按下送出（跟舊版「已選 N 天」是同一個理由）。 */
+.uappt-wrap .uappt-paint-dirty {
+	padding: 2px 10px;
+	background: var( --uappt-color-warning-bg );
+	border-radius: 999px;
+	color: var( --uappt-color-warning-ink );
+	font-size: 12px;
+	font-weight: 600;
+}
+
+/* --- 一次排整個月的三顆產生器（v2.86.0）---
+ *
+ * 用 wp-admin 原生的 .button，不做成藥丸：它們跟畫筆**不是同一種東西**。畫筆是
+ * 一個持續的模式（選了之後每一次點擊都受它影響），產生器是按一下就做完的動作。
+ * 長得一樣會讓人以為「複製上個月」也要先選再點格子。 */
+.uappt-wrap .uappt-generators {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: var( --uappt-space-2 );
+	margin-bottom: var( --uappt-space-3 );
+}
+
+.uappt-wrap .uappt-generators-label {
+	color: var( --uappt-color-text-muted );
+	font-size: 12px;
+	font-weight: 600;
+}
+
+/* 下拉與它的「套用」鈕是一組，中間不要被 gap 拆開。 */
+.uappt-wrap .uappt-generator-mate {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+}
+
+/* --- 排班狀態列（v2.87.0）---
+ *
+ * 「班表排到哪一天」是整個排班改版最重要的一條資訊：沒有它，「忘了往下排」在後台
+ * 完全沒有痕跡——月曆翻到下個月是一片空白，而空白跟「排好了、那幾天就是不上班」
+ * 長得一模一樣。 */
+.uappt-wrap .uappt-coverage {
+	margin: 0 0 var( --uappt-space-4 );
+	padding: 8px 12px;
+	border-radius: var( --uappt-radius-sm );
+	font-size: 13px;
+}
+
+.uappt-wrap .uappt-coverage.is-ok {
+	background: var( --uappt-color-success-bg );
+	color: var( --uappt-color-success-ink );
+}
+
+/* 用 warning 不用 danger：班表排完了是「該去做一件事」，不是壞掉了。
+   紅色留給真正的錯誤，否則紅字看久了就沒有人看了。 */
+.uappt-wrap .uappt-coverage.is-short {
+	background: var( --uappt-color-warning-bg );
+	color: var( --uappt-color-warning-ink );
+}
+
+.uappt-wrap .uappt-coverage a {
+	margin-left: var( --uappt-space-2 );
+}
+
+/* --- 可收合的卡片（v2.89.0）---
+ *
+ * 人員編輯頁從「三張永遠攤開的面板 ＋ 六個表單」改成六張可收合的卡片。
+ * 計畫見 docs/staff-admin-v4-plan.md。
+ *
+ * 外觀刻意跟 .uappt-panel 一致（同樣的白底、圓角、邊框、標題列高度）——它們是同一種
+ * 東西的兩個版本，長得不一樣只會讓人以為是兩種不同的區塊。 */
+.uappt-wrap .uappt-card {
+	margin-top: var( --uappt-space-5 );
+	background: var( --uappt-surface );
+	/* ⚠️ 邊框與圓角要跟 .uappt-panel 一模一樣（border-strong、radius-md）：
+	   卡片與面板在同一頁上並排，差一階就會看起來像兩種不同的區塊。 */
+	border: 1px solid var( --uappt-color-border-strong );
+	border-radius: var( --uappt-radius-md );
+	overflow: hidden;
+}
+
+.uappt-wrap .uappt-card-head {
+	display: flex;
+	align-items: center;
+	gap: var( --uappt-space-2 );
+	padding: 14px 20px;
+	cursor: pointer;
+	list-style: none; /* Firefox */
+	user-select: none;
+}
+
+/* 預設的那個小三角在 Safari 走 ::-webkit-details-marker，拿掉之後自己畫一個
+   ——自己畫才能控制它的位置與旋轉，而且三種瀏覽器長得一樣。 */
+.uappt-wrap .uappt-card-head::-webkit-details-marker {
+	display: none;
+}
+
+.uappt-wrap .uappt-card-head::after {
+	content: "";
+	flex: 0 0 auto;
+	width: 8px;
+	height: 8px;
+	margin-left: auto;
+	border-right: 2px solid var( --uappt-color-text-muted );
+	border-bottom: 2px solid var( --uappt-color-text-muted );
+	transform: rotate( 45deg ) translate( -2px, -2px );
+	transition: transform .15s ease;
+}
+
+.uappt-wrap .uappt-card[open] > .uappt-card-head::after {
+	transform: rotate( -135deg );
+}
+
+.uappt-wrap .uappt-card-head:hover {
+	background: var( --uappt-surface-subtle );
+}
+
+.uappt-wrap .uappt-card-icon {
+	display: inline-flex;
+	color: var( --uappt-color-text-muted );
+}
+
+.uappt-wrap .uappt-card-title {
+	font-size: 14px;
+	font-weight: 600;
+}
+
+/* 摘要：卡片收起來之後它就是這張卡片的全部內容，所以要讀得清楚，但不能跟標題
+   搶——比標題小一階、用次要色。 */
+.uappt-wrap .uappt-card-summary {
+	color: var( --uappt-color-text-muted );
+	font-size: 13px;
+	font-weight: 400;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+/* 「未儲存」：收起來不會把改到一半的東西藏掉。用 warning 不用 danger——還沒存
+   不是錯誤，是一件還沒做完的事。 */
+.uappt-wrap .uappt-card-dirty {
+	flex: 0 0 auto;
+	padding: 2px 8px;
+	background: var( --uappt-color-warning-bg );
+	border-radius: 999px;
+	color: var( --uappt-color-warning-ink );
+	font-size: 11px;
+	font-weight: 600;
+}
+
+.uappt-wrap .uappt-card-body {
+	padding: 20px;
+	border-top: 1px solid var( --uappt-color-border );
+}
+
+/* ⚠️ **卡片內距四邊一樣，第一個東西不要再自己加外距。**（v2.96.1）
+ *
+ * 原本上內距是 0，靠第一個元素自己的 margin 撐開——結果卡片標題列底下的距離
+ * 隨內容而變：「這個月的班」的提醒列 1px、時段佔用 3px、排班方式 5px、欄位表 8～13px，
+ * 左右與下方卻是固定的 20px。現在由卡片統一給，第一個東西的上外距歸零。
+ *
+ * 編輯模式下第一個看得到的東西包在 .uappt-card-form 裡，前面還有幾個 hidden input，
+ * 所以 :first-child 抓不到它，要用 :first-of-type 指名。 */
+.uappt-wrap .uappt-card-body > :first-child,
+.uappt-wrap .uappt-card-body > .uappt-card-form > .form-table:first-of-type,
+.uappt-wrap .uappt-card-body > .uappt-card-form > fieldset:first-of-type {
+	margin-top: 0;
+}
+
+/* 卡片裡的 form-table **不要再給左右內距**：那 20px 是給「面板直接放表格」用的
+ * （面板沒有 body 內距，見 .uappt-wrap .form-table th 的說明），卡片已經有 20px 了。
+ * 疊兩層的結果是同一張卡片裡，欄位比儲存鈕、排班方式的選項、提醒列都多縮進 20px。
+ * 這段原本只有一句註解說「不要再疊一層」，卻沒有真的寫出來。 */
+.uappt-wrap .uappt-card-body .form-table th {
+	padding-left: 0;
+}
+
+.uappt-wrap .uappt-card-body .form-table td {
+	padding-right: 0;
+}
+
+/* 欄位表是卡片第一個東西時，第一列的上內距也拿掉：標籤文字才會跟其他卡片的第一個
+   東西一樣，落在標題列底下 20px 的位置。 */
+.uappt-wrap .uappt-card-body > .form-table:first-child > tbody > tr:first-child > *,
+.uappt-wrap .uappt-card-body > .uappt-card-form > .form-table:first-of-type > tbody > tr:first-child > * {
+	padding-top: 0;
+}
+
+/* 卡片裡的小節標題（例如「改這一天」）。比卡片標題小一階，不要再長得像另一張卡片。 */
+.uappt-wrap .uappt-card-subhead {
+	margin: var( --uappt-space-5 ) 0 var( --uappt-space-3 );
+	font-size: 13px;
+	font-weight: 600;
+}
+
+.uappt-wrap .uappt-card-section {
+	margin-top: var( --uappt-space-4 );
+}
+
+/* 卡片裡前面還有別的東西時，form-table 跟它隔 12px。第一個就是表格時不帶（卡片
+   內距已經給了，見上面 .uappt-card-body > :first-child）——原本這條不分位置一律
+   12px，那是卡片上內距還是 0 的時候的補丁，留著會讓新增頁的卡片頂端變 32px。 */
+.uappt-wrap .uappt-card-body > .form-table:not(:first-child) {
+	margin-top: var( --uappt-space-3 );
+}
+
+/* ⚠️ 手機版：標題列的摘要會跟標題搶寬度，380px 上「王小美　・　啟用中」會把
+   標題擠到剩兩個字。摘要改成第二行——它在收合狀態下是主要內容，不能被截掉。
+   這個斷點差異的理由是寬度本身，不是裝飾。 */
+@media ( max-width: 782px ) {
+	.uappt-wrap .uappt-card-head {
+		flex-wrap: wrap;
+		padding: 12px 16px;
+	}
+
+	/* 手機上卡片內距四邊 16px（標題列也是 16px），欄位表同樣不再疊自己的左右內距——
+	   手機版的 .form-table 會把 th／td 都補成左右 20px（見 782px 斷點的表單段落）。 */
+	.uappt-wrap .uappt-card-body .form-table th,
+	.uappt-wrap .uappt-card-body .form-table td {
+		padding-left: 0;
+		padding-right: 0;
+	}
+
+	/* 摘要換到第二行時，箭頭要留在標題那一行——不然它會被擠到摘要下面自己佔一行，
+	   看起來像一個跟卡片無關的符號。用 order 把它排到摘要前面，不用改 DOM。 */
+	.uappt-wrap .uappt-card-head::after {
+		order: 1;
+	}
+
+	.uappt-wrap .uappt-card-summary {
+		order: 2;
+		flex: 1 0 100%;
+		white-space: normal;
+	}
+
+	.uappt-wrap .uappt-card-body {
+		padding: 16px;
+	}
+}
+
+/* 設定卡片群組共用的那顆鈕（階段 1 的過渡狀態）。它在卡片外面，所以要自己對齊
+   卡片的左緣，不然看起來像掉出來的。 */
+.uappt-wrap .uappt-settings-submit {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: var( --uappt-space-3 );
+	margin-top: var( --uappt-space-4 );
+	padding: 0;
+}
+
+/* 短標籤只給手機用（見上面 782px 斷點裡的說明）：桌機放得下完整時段，印兩份只會
+   讓每一格多一行重複的字。 */
+.uappt-wrap .uappt-cal-short {
+	display: none;
+}
+
+/* 設定卡片裡那顆儲存鈕。鈕在卡片裡面，範圍由卡片的標題定義——所以文案只要
+   「儲存」兩個字，不用再在鈕上重述一次它存了什麼（v2.89.0 以前那四顆各自叫
+   「儲存基本資料與固定班樣板」「儲存這個月」，正是因為它們沒有看得出範圍的容器）。 */
+.uappt-wrap .uappt-card-submit {
+	margin: var( --uappt-space-5 ) 0 0;
+	padding: var( --uappt-space-4 ) 0 0;
+	border-top: 1px solid var( --uappt-color-border );
+}
+
+/* --- 班別選擇列的手機版（v2.91.0）---
+ *
+ * ⚠️ 觸控目標要夠大。桌面版的藥丸是 13px 字、8px 內距（約 34px 高），在手機上
+ * 低於一般建議的 44px。這個斷點差異的理由是**手指比游標粗**，不是裝飾。 */
+@media ( max-width: 782px ) {
+	.uappt-wrap .uappt-shift {
+		flex: 1 1 calc( 50% - var( --uappt-space-2 ) );
+		justify-content: center;
+		min-height: 44px;
+		padding: 10px 12px;
+	}
+
+	/* 提示佔整行：它要說「現在選了幾天」，被擠成半行就讀不完。 */
+	.uappt-wrap .uappt-shift-pick-label {
+		flex: 1 0 100%;
+	}
+}
+
+/* 「改這一天」收合起來（v2.92.0）。九成的排班是「選日子 → 選班別」，這張表單只處理
+   剩下的一成：非標準時段、備註。用 <details> 而不是 JS 顯示／隱藏，沒有 JS 時仍然
+   打得開——v2.81.0 定下的那條退路（JS 壞掉的最差情況是要自己填日期）還在。 */
+.uappt-wrap .uappt-day-editor {
+	margin-top: var( --uappt-space-5 );
+	border-top: 1px solid var( --uappt-color-border );
+}
+
+.uappt-wrap .uappt-day-editor > summary {
+	padding: var( --uappt-space-3 ) 0;
+	font-size: 13px;
+	font-weight: 600;
+	cursor: pointer;
+}
+
+/* 卡片裡的「說明」摺疊區（v2.92.0）。
+ *
+ * 規則是「一張卡片最多一句常駐說明，其餘進這裡」——見 UAPPT_Admin::help() 的 ⚠️。
+ * 做得小而不顯眼是刻意的：它是「要查的時候才點」的東西，長得太像按鈕會變成另一種
+ * 視覺噪音。 */
+.uappt-wrap .uappt-help {
+	margin: var( --uappt-space-2 ) 0 0;
+	font-size: 13px;
+}
+
+.uappt-wrap .uappt-help > summary {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	color: var( --uappt-color-primary );
+	cursor: pointer;
+}
+
+.uappt-wrap .uappt-help > summary::before {
+	content: "?";
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 16px;
+	height: 16px;
+	border: 1px solid currentColor;
+	border-radius: 50%;
+	font-size: 11px;
+	font-weight: 700;
+}
+
+.uappt-wrap .uappt-help-body {
+	margin-top: var( --uappt-space-2 );
+	padding: var( --uappt-space-3 );
+	background: var( --uappt-surface-subtle );
+	border-radius: var( --uappt-radius-sm );
+	color: var( --uappt-color-text-muted );
+}
+
+.uappt-wrap .uappt-help-body p {
+	margin: 0 0 var( --uappt-space-2 );
+}
+
+.uappt-wrap .uappt-help-body p:last-child {
+	margin-bottom: 0;
+}
+
+/* --- 全店月排班表（v2.94.0）---
+ *
+ * 人員 × 日期一張表。計畫見 docs/staff-roster-plan.md 的 D5。
+ *
+ * 顏色跟人員編輯頁的月曆**同一套語意**（未排班＝灰、店休＝紅），只多一個「上班＝淡綠」：
+ * 月曆一格放得下時段文字，這裡一格只有兩三個字，一整列要能一眼掃出「誰哪天在」，
+ * 得靠底色。 */
+.uappt-wrap .uappt-roster-legend {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 4px 14px;
+	margin: var( --uappt-space-2 ) 0 var( --uappt-space-3 );
+	color: var( --uappt-color-text-muted );
+	font-size: 12px;
+}
+
+.uappt-wrap .uappt-roster-swatch {
+	display: inline-block;
+	width: 14px;
+	height: 14px;
+	margin-right: 6px;
+	border: 1px solid var( --uappt-color-border );
+	border-radius: var( --uappt-radius-sm );
+	vertical-align: middle;
+}
+
+/* 表格本身要能橫向捲：31 天在大部分螢幕上都放不下。捲動容器包在表格外面，
+   人名欄用 sticky 釘住——捲到月底還要知道這一列是誰。 */
+.uappt-wrap .uappt-roster-scroll {
+	overflow-x: auto;
+	border: 1px solid var( --uappt-color-border );
+	border-radius: var( --uappt-radius-md );
+	background: var( --uappt-surface );
+}
+
+.uappt-wrap .uappt-roster {
+	border-collapse: separate;
+	border-spacing: 0;
+	min-width: 100%;
+	font-size: 12px;
+}
+
+.uappt-wrap .uappt-roster th,
+.uappt-wrap .uappt-roster td {
+	padding: 0;
+	border-right: 1px solid var( --uappt-color-border-subtle );
+	border-bottom: 1px solid var( --uappt-color-border-subtle );
+	text-align: center;
+	vertical-align: middle;
+}
+
+.uappt-wrap .uappt-roster .uappt-roster-name,
+.uappt-wrap .uappt-roster .uappt-roster-corner {
+	position: sticky;
+	left: 0;
+	z-index: 2;
+	min-width: 96px;
+	max-width: 140px;
+	padding: 6px 8px;
+	background: var( --uappt-surface );
+	text-align: left;
+	box-shadow: 1px 0 0 var( --uappt-color-border );
+}
+
+.uappt-wrap .uappt-roster .uappt-roster-corner {
+	z-index: 3;
+	color: var( --uappt-color-text-muted );
+	font-weight: 600;
+}
+
+/* 人名是「選他整個月」的按鈕。看起來要像名字，不像一顆鈕——但要看得出可以點
+   （虛線底線，跟月曆的星期標題同一個暗示）。 */
+.uappt-wrap .uappt-roster-row {
+	display: block;
+	padding: 0;
+	background: none;
+	border: 0;
+	border-bottom: 1px dashed var( --uappt-color-border-strong );
+	color: var( --uappt-color-text );
+	font: inherit;
+	font-size: 13px;
+	font-weight: 600;
+	text-align: left;
+	cursor: pointer;
+}
+
+.uappt-wrap .uappt-roster-row:hover,
+.uappt-wrap .uappt-roster-row:focus-visible {
+	border-bottom-color: var( --uappt-color-primary );
+	color: var( --uappt-color-primary );
+}
+
+.uappt-wrap .uappt-roster-name-text {
+	display: block;
+	font-size: 13px;
+	font-weight: 600;
+}
+
+.uappt-wrap .uappt-roster-kind {
+	display: block;
+	color: var( --uappt-color-text-faint );
+	font-size: 11px;
+	font-weight: 400;
+}
+
+/* 日期標題＝「選那天所有人」的按鈕。 */
+.uappt-wrap .uappt-roster-col {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	width: 100%;
+	min-width: 36px;
+	padding: 4px 0;
+	background: none;
+	border: 0;
+	color: inherit;
+	font: inherit;
+	line-height: 1.2;
+	cursor: pointer;
+}
+
+.uappt-wrap .uappt-roster-col:hover,
+.uappt-wrap .uappt-roster-col:focus-visible {
+	background: var( --uappt-color-primary-bg );
+	color: var( --uappt-color-primary );
+}
+
+.uappt-wrap .uappt-roster-day-num {
+	font-weight: 600;
+}
+
+.uappt-wrap .uappt-roster-day-wd {
+	color: var( --uappt-color-text-muted );
+	font-size: 11px;
+}
+
+.uappt-wrap .uappt-roster-day.is-weekend .uappt-roster-day-wd {
+	color: var( --uappt-color-danger-ink );
+}
+
+.uappt-wrap .uappt-roster-day.is-today {
+	box-shadow: inset 0 -3px 0 var( --uappt-color-primary );
+}
+
+.uappt-wrap .uappt-roster-day.is-shop-closed {
+	background: var( --uappt-color-danger-bg );
+}
+
+/* 格子。高度固定：內容只會是兩三個字，不固定的話整排會因為一格換行而忽高忽低。
+   左右留 4px：「09:00」貼著格線的話，一整排讀起來是「09:0009:0009:00」。 */
+.uappt-wrap .uappt-roster .uappt-roster-cell {
+	height: 34px;
+	padding: 0 4px;
+	white-space: nowrap;
+	font-size: 11px;
+	font-variant-numeric: tabular-nums;
+}
+
+.uappt-wrap .uappt-roster-cell.is-paintable {
+	cursor: pointer;
+}
+
+.uappt-wrap .uappt-roster-cell.is-open,
+.uappt-wrap .uappt-roster-swatch.is-open {
+	background: var( --uappt-color-success-bg );
+	color: var( --uappt-color-success-ink );
+	font-weight: 600;
+}
+
+.uappt-wrap .uappt-roster-cell.is-closed,
+.uappt-wrap .uappt-roster-swatch.is-closed {
+	background: var( --uappt-surface );
+	color: var( --uappt-color-text-muted );
+}
+
+.uappt-wrap .uappt-roster-cell.is-unset,
+.uappt-wrap .uappt-roster-swatch.is-unset {
+	background: var( --uappt-surface-sunken );
+}
+
+.uappt-wrap .uappt-roster-cell.is-shop-closed,
+.uappt-wrap .uappt-roster-swatch.is-shop-closed {
+	background: var( --uappt-color-danger-bg );
+}
+
+/* 過去的日子只能看：淡掉，但不藏——上個禮拜誰上過班仍然是有用的資訊。 */
+.uappt-wrap .uappt-roster-cell.is-past {
+	opacity: .5;
+}
+
+.uappt-wrap .uappt-roster-cell.is-paintable:hover {
+	box-shadow: inset 0 0 0 2px var( --uappt-color-border-strong );
+}
+
+.uappt-wrap .uappt-roster-cell:focus-visible {
+	outline: 2px solid var( --uappt-color-primary );
+	outline-offset: -2px;
+}
+
+/* 選取中：跟月曆同一個樣子（粗框＋主色），不是只換底色——這張表已經有四種
+   底色了，再多一種淡色沒有人分得出來。 */
+.uappt-wrap .uappt-roster .uappt-roster-cell.is-selected {
+	position: relative;
+	outline: none;
+	background: var( --uappt-color-primary );
+	color: #fff;
+}
+
+/* 月排班表的格子只有 41px 寬，✓ 縮小放在角落，不蓋住中間的班別字。 */
+.uappt-wrap .uappt-roster .uappt-roster-cell.is-selected::before {
+	content: "✓";
+	position: absolute;
+	top: 1px;
+	right: 2px;
+	font-size: 9px;
+	font-weight: 700;
+	line-height: 1;
+}
+
+.uappt-wrap .uappt-roster .uappt-roster-cell.is-selected .uappt-roster-req {
+	color: #fff;
+}
+
+/* 排過還沒存：虛線框，跟月曆一樣——「整張一次送出」最大的風險就是以為自己存過了。 */
+.uappt-wrap .uappt-roster-cell.is-dirty {
+	box-shadow: inset 0 0 0 2px var( --uappt-color-primary );
+	border-style: dashed;
+}
+
+.uappt-wrap .uappt-roster tfoot th,
+.uappt-wrap .uappt-roster tfoot td {
+	border-bottom: 0;
+	background: var( --uappt-surface-subtle );
+	font-weight: 600;
+}
+
+/* 營業日 0 人上班＝那天客人完全約不到，標出來。 */
+.uappt-wrap .uappt-roster tfoot .uappt-roster-count.is-empty {
+	background: var( --uappt-color-warning-bg );
+	color: var( --uappt-color-warning-ink );
+}
+
+/* 動作列黏在畫面底部：表一長，選了上面的格子之後下面的班別鈕已經捲出畫面，
+   使用者會以為「選了沒反應」。 */
+.uappt-wrap .uappt-roster-actions {
+	position: sticky;
+	bottom: 0;
+	z-index: 5;
+	margin-top: var( --uappt-space-3 );
+	padding: var( --uappt-space-3 ) 0;
+	background: var( --uappt-surface-sunken );
+	box-shadow: 0 -1px 0 var( --uappt-color-border );
+}
+
+/* 上下 12px 由容器給，裡面兩塊自己不帶外距。原本是靠子元素的 margin-top 撐，而
+   容器沒有上內距，那段外距直接穿出去——儲存鈕貼在分隔線上（0px），底下卻有 25px
+   （<p> 預設的下外距疊上去）。 */
+.uappt-wrap .uappt-roster-actions .uappt-shift-pick {
+	margin: 0 0 var( --uappt-space-3 );
+}
+
+.uappt-wrap .uappt-roster-actions .uappt-paint-actions {
+	margin: 0;
+}
+
+/* WordPress 在手機寬度給 .button 一個 4px 的下外距（讓換行的鈕不要黏在一起），
+   在這條上下對稱的動作列裡會變成「上 12、下 16」。 */
+.uappt-wrap .uappt-roster-actions .uappt-paint-actions .button {
+	margin-bottom: 0;
+}
+
+/* 全店表的班別列在手機上排成三欄、時間換到第二行。
+ *
+ * ⚠️ **這個差異的理由是「黏在底部」，不是單純的斷點**：人員編輯頁的同一列不黏，
+ * 兩欄藥丸再高都只是往下多捲一點；這裡它蓋在表格上面，兩欄的版本在 375px 上會
+ * 吃掉半個螢幕，選了格子之後反而看不到自己選了什麼。時間仍然印（「早班」是幾點
+ * 到幾點不是每家店都一樣），只是縮小放到第二行。 */
+@media ( max-width: 782px ) {
+	/* 四欄：三欄的版本在班別一多（這個站 5 個班別 ＋ 例休／請假／清除＝8 顆）時
+	   要三排，黏在底部的那一塊會蓋掉大半張表。 */
+	.uappt-wrap .uappt-roster-actions .uappt-shift {
+		flex: 1 1 calc( 25% - 6px );
+		flex-direction: column;
+		align-items: center;
+		gap: 0;
+		min-height: 44px;
+		padding: 4px 6px;
+		border-radius: var( --uappt-radius-md );
+	}
+
+	.uappt-wrap .uappt-roster-actions .uappt-shift-time {
+		font-size: 10px;
+		line-height: 1.2;
+		white-space: normal;
+		text-align: center;
+	}
+
+	.uappt-wrap .uappt-roster-actions .uappt-shift-pick {
+		padding: var( --uappt-space-2 );
+		gap: 6px;
+	}
+
+}
+
+/* --- 全店月排班表：工具列與週檢視（v2.95.0）--- */
+.uappt-wrap .uappt-roster-toolbar {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: var( --uappt-space-2 ) var( --uappt-space-4 );
+	margin-bottom: var( --uappt-space-3 );
+}
+
+/* 產生器在這裡跟其他兩組排在同一列，自己的下邊距會讓整列對不齊。 */
+.uappt-wrap .uappt-roster-toolbar .uappt-generators {
+	margin-bottom: 0;
+}
+
+/* 整月／一週：兩顆並排的切換鈕，按下去的那顆是實心。用 aria-pressed 當樣式依據，
+   螢幕閱讀器與畫面讀的是同一個狀態。 */
+.uappt-wrap .uappt-roster-view {
+	display: inline-flex;
+	border: 1px solid var( --uappt-color-primary );
+	border-radius: var( --uappt-radius-md );
+	overflow: hidden;
+}
+
+.uappt-wrap .uappt-roster-view-btn {
+	min-height: 32px;
+	padding: 4px 14px;
+	background: var( --uappt-surface );
+	border: 0;
+	color: var( --uappt-color-primary );
+	font: inherit;
+	font-size: 13px;
+	cursor: pointer;
+}
+
+.uappt-wrap .uappt-roster-view-btn + .uappt-roster-view-btn {
+	border-left: 1px solid var( --uappt-color-primary );
+}
+
+.uappt-wrap .uappt-roster-view-btn[aria-pressed="true"] {
+	background: var( --uappt-color-primary );
+	color: #fff;
+}
+
+.uappt-wrap .uappt-roster-weeknav {
+	display: inline-flex;
+	align-items: center;
+	gap: var( --uappt-space-2 );
+}
+
+.uappt-wrap .uappt-roster-week-label {
+	min-width: 7em;
+	text-align: center;
+	font-variant-numeric: tabular-nums;
+}
+
+/* 週檢視：只留目前那一週的欄。整張月表一直都在 DOM 裡（切週不換頁，改過的格子
+   留著），這裡只負責藏。月份最多 6 週，所以 6 條寫死——用 JS 逐格設 hidden 也
+   可以，但切一次週要動 31 × 人數個節點。 */
+.uappt-wrap .uappt-roster[data-view="week"][data-show-week="0"] [data-week]:not([data-week="0"]),
+.uappt-wrap .uappt-roster[data-view="week"][data-show-week="1"] [data-week]:not([data-week="1"]),
+.uappt-wrap .uappt-roster[data-view="week"][data-show-week="2"] [data-week]:not([data-week="2"]),
+.uappt-wrap .uappt-roster[data-view="week"][data-show-week="3"] [data-week]:not([data-week="3"]),
+.uappt-wrap .uappt-roster[data-view="week"][data-show-week="4"] [data-week]:not([data-week="4"]),
+.uappt-wrap .uappt-roster[data-view="week"][data-show-week="5"] [data-week]:not([data-week="5"]) {
+	display: none;
+}
+
+/* 一週只有 7 欄，攤滿整個寬度——不然右邊空一大片，格子反而比整月時還擠。 */
+.uappt-wrap .uappt-roster[data-view="week"] {
+	width: 100%;
+}
+
+/* 手機上人名欄縮窄：一週 7 欄 ＋ 人名要塞進 343px（375 扣掉兩邊 16px）。人名欄
+   照整月時的 96px 會讓第七天被擠出畫面，又回到要橫捲。 */
+@media ( max-width: 782px ) {
+	.uappt-wrap .uappt-roster .uappt-roster-name,
+	.uappt-wrap .uappt-roster .uappt-roster-corner {
+		min-width: 52px;
+		max-width: 72px;
+		padding: 4px;
+	}
+
+	.uappt-wrap .uappt-roster-row,
+	.uappt-wrap .uappt-roster-name-text {
+		font-size: 12px;
+		overflow-wrap: anywhere;
+	}
+
+	/* 桌機給的 36px 下限在這裡拿掉：7 × 36 ＋ 內距 ＋ 人名欄剛好超出 343px 一點，
+	   第七天會被切掉一半。「09:00」本身約 31px，交給內容決定寬度就放得下。 */
+	.uappt-wrap .uappt-roster-col,
+	.uappt-wrap .uappt-roster .uappt-roster-cell {
+		min-width: 0;
+	}
+
+	.uappt-wrap .uappt-roster .uappt-roster-cell {
+		height: 44px;
+		padding: 0 1px;
+	}
+}
+
+/* 人員編輯頁月曆導覽列右邊的「看全店月排班表 →」（v2.95.0）。靠右、可以換行：
+   手機上上個月／月份／下個月已經佔滿一行，它擠進去會把月份字壓扁。 */
+.uappt-wrap .uappt-cal-nav:has(.uappt-cal-nav-roster) {
+	flex-wrap: wrap;
+}
+
+.uappt-wrap .uappt-cal-nav-roster {
+	margin-left: auto;
+	font-size: 13px;
+}
+
+/* --- 全店月排班表：待審申請（v2.96.0）---
+ *
+ * 虛線框＝員工送來還沒處理的申請。用琥珀色不是主色：主色已經是「選取中」與
+ * 「排過還沒存」，再用一次就分不出「這格是我改的」還是「這格是員工要的」。 */
+.uappt-wrap .uappt-roster-req-hint {
+	margin: 0 0 var( --uappt-space-3 );
+	padding: var( --uappt-space-2 ) var( --uappt-space-3 );
+	background: var( --uappt-color-amber-bg );
+	border-left: 3px solid var( --uappt-color-amber );
+	border-radius: var( --uappt-radius-sm );
+	color: var( --uappt-color-amber-ink );
+}
+
+.uappt-wrap .uappt-roster-swatch.has-request {
+	background: var( --uappt-surface );
+	border: 2px dashed var( --uappt-color-amber );
+}
+
+.uappt-wrap .uappt-roster .uappt-roster-cell.has-request {
+	outline: 2px dashed var( --uappt-color-amber );
+	outline-offset: -3px;
+}
+
+/* 一格兩行：上面是現在排的，下面是員工申請的。 */
+.uappt-wrap .uappt-roster-label,
+.uappt-wrap .uappt-roster-req {
+	display: block;
+	line-height: 1.2;
+}
+
+.uappt-wrap .uappt-roster-req {
+	color: var( --uappt-color-amber-ink );
+	font-size: 10px;
+	font-weight: 600;
+}
+
+/* 選取中的框優先：不然選了有申請的格子，看起來跟沒選一樣。 */
+.uappt-wrap .uappt-roster .uappt-roster-cell.has-request.is-selected {
+	outline: 2px solid var( --uappt-color-primary );
+	outline-offset: -2px;
+}
+
+/* 接受了（還沒存）：框變實線綠色，申請那一行收起來——上面那行已經是申請的內容。 */
+.uappt-wrap .uappt-roster .uappt-roster-cell.is-accepted {
+	outline: 2px solid var( --uappt-color-success );
+	outline-offset: -3px;
+}
+
+.uappt-wrap .uappt-roster-cell.is-accepted .uappt-roster-req {
+	display: none;
+}
+
+/* 不接受（還沒存）：申請那一行劃掉，框維持虛線——那天排什麼是另一件事。 */
+.uappt-wrap .uappt-roster-cell.is-rejected .uappt-roster-req {
+	text-decoration: line-through;
+	opacity: .6;
+}
+
+.uappt-wrap .uappt-roster-decide--approve {
+	border-color: var( --uappt-color-success );
+	color: var( --uappt-color-success-ink );
+	font-weight: 600;
+}
+
+.uappt-wrap .uappt-roster-decide--reject {
+	border-color: var( --uappt-color-danger );
+	color: var( --uappt-color-danger-ink );
+}
+
+/* 手機上「接受 N 筆申請」「不接受 N 筆」各佔半行：它們的字比班別長，擠在四分之一
+   寬裡會斷成兩行，而這兩顆是這一列最重要的決定，不該是最難讀的。 */
+@media ( max-width: 782px ) {
+	.uappt-wrap .uappt-roster-actions .uappt-roster-decide {
+		flex-basis: calc( 50% - 6px );
+	}
+}
+
+/* 「一次排整個月」的說明緊接著月曆：說明收起來時那一行「？說明」原本直接貼在星期
+   標題上（0px），看起來像星期標題的一部分（v2.96.1）。 */
+.uappt-wrap .uappt-help + .uappt-cal {
+	margin-top: var( --uappt-space-3 );
+}
+
+/* 報表：可捲動的表格底下緊接著提示文字時，手機上只剩 2px（v2.96.1 全面檢查順手量到，
+   不屬於這次排班改版，但同一條「區塊之間 12px」的規則）。 */
+.uappt-wrap .uappt-table-scroll + .description {
+	margin-top: var( --uappt-space-3 );
+}
+
+/* 手機上「今天」改成日期數字外面一個實心圓（v2.97.0）。
+ *
+ * ⚠️ **這個斷點差異的理由是寬度**：一格只有 46px，「6」加上「今天」小標放不下，會被
+ * 折成直排的「今／天」把整格撐高。實心圓是手機月曆通用的「今天」記號，一個數字的寬度
+ * 就夠。「今天」兩個字仍然留給螢幕閱讀器（視覺上隱藏，不是 display: none）。 */
+@media ( max-width: 782px ) {
+	.uappt-wrap .uappt-cal-today {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		margin: -1px;
+		padding: 0;
+		overflow: hidden;
+		clip: rect( 0, 0, 0, 0 );
+		white-space: nowrap;
+		border: 0;
+	}
+
+	.uappt-wrap .uappt-cal-day.is-today .uappt-cal-day-num {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		align-self: flex-start;
+		min-width: 20px;
+		height: 20px;
+		padding: 0 3px;
+		box-sizing: border-box;
+		border-radius: 999px;
+		background: var( --uappt-color-primary-ink );
+		color: #fff;
+	}
+
+	.uappt-wrap .uappt-cal-day.is-today.is-selected .uappt-cal-day-num {
+		background: #fff;
+		color: var( --uappt-color-primary );
+	}
+
+	/* ✓ 縮小一點：46px 寬的格子裡 18px 的圓會壓到兩位數的日期。 */
+	.uappt-wrap .uappt-cal-day.is-selected::before {
+		top: 3px;
+		right: 3px;
+		width: 14px;
+		height: 14px;
+		font-size: 10px;
+		line-height: 14px;
+	}
+}
+
+/* --- 班別顏色（v2.99.0）---
+ *
+ * 每個班別從 8 色固定色盤挑一個（UAPPT_Shift_Preset::COLORS）。一個 class 只設三個
+ * 變數，月曆格、月排班表格、班別鈕、圖例各自拿去用——色碼只寫在這裡一次。
+ *
+ * 每一組都是「淡底＋同色系深字」，淡底上的字對比都超過 4.5:1。刻意沒有綠色：「上班但
+ * 對不上任何班別」本來就是淡綠，班別再用綠會分不出來。
+ *
+ * ⚠️ 套色的規則一律帶 `:not(.is-selected)`：選取的實心藍（v2.97.0）一定要蓋過班別色，
+ * 不然選了一格黃色的早班看起來跟沒選一樣。 */
+.uappt-shift-c-amber  { --uappt-shift-bg: #fef3c7; --uappt-shift-ink: #8a4b08; --uappt-shift-dot: #f59e0b; }
+.uappt-shift-c-sky    { --uappt-shift-bg: #e0f2fe; --uappt-shift-ink: #075985; --uappt-shift-dot: #0ea5e9; }
+.uappt-shift-c-violet { --uappt-shift-bg: #ede9fe; --uappt-shift-ink: #5b21b6; --uappt-shift-dot: #8b5cf6; }
+.uappt-shift-c-rose   { --uappt-shift-bg: #ffe4e6; --uappt-shift-ink: #9f1239; --uappt-shift-dot: #f43f5e; }
+.uappt-shift-c-teal   { --uappt-shift-bg: #ccfbf1; --uappt-shift-ink: #115e59; --uappt-shift-dot: #14b8a6; }
+.uappt-shift-c-orange { --uappt-shift-bg: #ffedd5; --uappt-shift-ink: #9a3412; --uappt-shift-dot: #f97316; }
+.uappt-shift-c-indigo { --uappt-shift-bg: #e0e7ff; --uappt-shift-ink: #3730a3; --uappt-shift-dot: #6366f1; }
+.uappt-shift-c-tan    { --uappt-shift-bg: #f3e8dc; --uappt-shift-ink: #6b4423; --uappt-shift-dot: #b07a4a; }
+
+/* 月排班表的格子 */
+.uappt-wrap .uappt-roster .uappt-roster-cell.is-open.has-shift:not(.is-selected) {
+	background: var( --uappt-shift-bg );
+	color: var( --uappt-shift-ink );
+}
+
+/* 人員編輯頁的月曆格子：整格淡底、時段字用同色系深色。 */
+.uappt-wrap .uappt-cal-day.is-open.has-shift:not(.is-selected) {
+	background: var( --uappt-shift-bg );
+	border-color: var( --uappt-shift-dot );
+}
+
+.uappt-wrap .uappt-cal-day.is-open.has-shift:not(.is-selected) .uappt-cal-range,
+.uappt-wrap .uappt-cal-day.is-open.has-shift:not(.is-selected) .uappt-cal-short,
+.uappt-wrap .uappt-cal-day.is-open.has-shift:not(.is-selected).is-dirty::after {
+	color: var( --uappt-shift-ink );
+}
+
+/* 班別鈕：名字前面一個色點，鈕本身維持白底——一整排彩色的藥丸會比格子還搶眼，
+   而這排鈕的工作是「讓你認得出是哪一個顏色」，一個點就夠。 */
+.uappt-wrap .uappt-shift.has-shift .uappt-shift-name::before,
+.uappt-wrap .uappt-roster-legend .has-shift::before {
+	content: "";
+	display: inline-block;
+	width: 10px;
+	height: 10px;
+	margin-right: 5px;
+	border-radius: 50%;
+	background: var( --uappt-shift-dot );
+	vertical-align: 0;
+}
+
+/* 圖例裡的班別：色點＋名字。 */
+.uappt-wrap .uappt-roster-legend .has-shift {
+	display: inline-flex;
+	align-items: center;
+}
+
+/* --- 班別設定頁的顏色選擇（v2.99.0）--- */
+.uappt-wrap .uappt-color-pick {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	margin: 0;
+	padding: 0;
+	border: 0;
+}
+
+.uappt-wrap .uappt-color-swatch {
+	position: relative;
+	display: inline-block;
+	width: 28px;
+	height: 28px;
+	cursor: pointer;
+}
+
+/* radio 本身藏起來（仍然可以用鍵盤選，焦點框畫在色塊上），整個色塊是點擊區。 */
+.uappt-wrap .uappt-color-swatch input {
+	position: absolute;
+	inset: 0;
+	width: 100%;
+	height: 100%;
+	margin: 0;
+	opacity: 0;
+	cursor: pointer;
+}
+
+.uappt-wrap .uappt-color-swatch span {
+	display: block;
+	width: 100%;
+	height: 100%;
+	box-sizing: border-box;
+	border: 2px solid var( --uappt-shift-dot );
+	border-radius: 50%;
+	background: var( --uappt-shift-bg );
+}
+
+/* 選中的那一個：實心色＋白色 ✓——跟月曆的「選取」同一種語言。 */
+.uappt-wrap .uappt-color-swatch input:checked + span {
+	background: var( --uappt-shift-dot );
+}
+
+.uappt-wrap .uappt-color-swatch input:checked + span::after {
+	content: "✓";
+	display: block;
+	color: #fff;
+	font-size: 14px;
+	font-weight: 700;
+	line-height: 24px;
+	text-align: center;
+}
+
+.uappt-wrap .uappt-color-swatch input:focus-visible + span {
+	box-shadow: var( --uappt-focus-ring );
+}
+
+/* 手機上色塊放大到 36px：手指點 28px 的圓太容易點到隔壁。 */
+@media ( max-width: 782px ) {
+	.uappt-wrap .uappt-color-swatch {
+		width: 36px;
+		height: 36px;
+	}
+
+	.uappt-wrap .uappt-color-swatch input:checked + span::after {
+		font-size: 16px;
+		line-height: 32px;
+	}
+}
+
+/* 色塊在名稱底下，8 個排成一行（桌機 22px）：寬度剛好等於名稱輸入框，看起來是同一組。 */
+.uappt-wrap .uappt-presets-table .uappt-color-pick {
+	margin-top: 8px;
+	gap: 4px;
+}
+
+@media ( min-width: 783px ) {
+	.uappt-wrap .uappt-presets-table .uappt-color-swatch {
+		width: 22px;
+		height: 22px;
+	}
+
+	.uappt-wrap .uappt-presets-table .uappt-color-swatch input:checked + span::after {
+		font-size: 12px;
+		line-height: 18px;
+	}
+}
+
+/* 月曆格子對到班別時，桌機也印班別名稱（v2.99.0）。原本桌機只印時段、手機只印短標籤；
+   有了班別顏色之後，「這是哪個班」是格子最主要的資訊，桌機放得下就一起印。 */
+@media ( min-width: 783px ) {
+	.uappt-wrap .uappt-cal-day.has-shift .uappt-cal-short {
+		display: block;
+		order: -1;
+		font-weight: 600;
+	}
+}
+
+/* --- 班別列的「自訂時段…」（v2.100.0）---
+ *
+ * 鈕長得像班別鈕（同樣的藥丸），但用虛線框：它不是一個班別，是「打一個時間」。 */
+.uappt-wrap .uappt-shift-custom-toggle {
+	display: inline-flex;
+	align-items: center;
+	padding: 8px 14px;
+	background: var( --uappt-surface );
+	border: 1px dashed var( --uappt-color-primary );
+	border-radius: 999px;
+	color: var( --uappt-color-primary );
+	font: inherit;
+	font-size: 13px;
+	line-height: 1.4;
+	cursor: pointer;
+}
+
+.uappt-wrap .uappt-shift-custom-toggle:hover,
+.uappt-wrap .uappt-shift-custom-toggle:focus-visible,
+.uappt-wrap .uappt-shift-custom-toggle.is-open {
+	border-style: solid;
+	background: var( --uappt-color-primary-bg );
+}
+
+/* 展開的面板佔整行：時間欄位、存成班別、套用排在一起，不夾在班別鈕中間。
+   ⚠️ border-box 不能省：flex-basis 100% 再加上自己的內距與框線，手機上會凸出右邊。 */
+.uappt-wrap .uappt-shift-custom {
+	box-sizing: border-box;
+	max-width: 100%;
+	display: flex;
+	flex: 1 0 100%;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: var( --uappt-space-2 );
+	padding: var( --uappt-space-2 ) var( --uappt-space-3 );
+	background: var( --uappt-surface );
+	border: 1px solid var( --uappt-color-border );
+	border-radius: var( --uappt-radius-md );
+}
+
+.uappt-wrap .uappt-shift-custom-times {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+}
+
+.uappt-wrap .uappt-shift-custom .uappt-time-input {
+	width: 6em;
+	text-align: center;
+}
+
+.uappt-wrap .uappt-custom-save {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	font-size: 13px;
+}
+
+.uappt-wrap .uappt-custom-name {
+	width: 12em;
+}
+
+.uappt-wrap .uappt-custom-error {
+	flex: 1 0 100%;
+	color: var( --uappt-color-danger-ink );
+	font-size: 12px;
+	font-weight: 600;
+}
+
+/* 手機：觸控高度 44px；時間兩格＋存成班別一行，名稱與套用各自整行——在 343px 裡
+   擠成一行的話，名稱欄只剩幾個字寬。 */
+@media ( max-width: 782px ) {
+	.uappt-wrap .uappt-shift-custom-toggle {
+		flex: 1 1 calc( 50% - var( --uappt-space-2 ) );
+		justify-content: center;
+		min-height: 44px;
+	}
+
+	.uappt-wrap .uappt-shift-custom .uappt-time-input,
+	.uappt-wrap .uappt-custom-name,
+	.uappt-wrap .uappt-custom-apply {
+		min-height: 44px;
+	}
+
+	.uappt-wrap .uappt-custom-name-wrap,
+	.uappt-wrap .uappt-custom-name,
+	.uappt-wrap .uappt-custom-apply {
+		flex: 1 0 100%;
+		box-sizing: border-box;
+		width: 100%;
+	}
+
+	/* 月排班表的班別列在手機上是四欄小方塊（v2.94.0），這顆跟著。 */
+	.uappt-wrap .uappt-roster-actions .uappt-shift-custom-toggle {
+		flex: 1 1 calc( 25% - 6px );
+		min-height: 44px;
+		padding: 4px 6px;
+		border-radius: var( --uappt-radius-md );
+	}
+}
+
+/* --- 手機版月排班表：週表放大、人員欄縮窄（v2.101.0）---
+ *
+ * 使用者回報手機上「太擠、密密麻麻」，並選擇保留週表、放大格子與字、人員欄縮短
+ * （docs/shift-ui-plan.md 的 D5）。
+ *
+ * ⚠️ 這幾條的斷點理由都是寬度：375px 裡要塞人名欄＋7 天。人名欄從 52–72px（名字＋
+ * 「固定班／彈性班」小字，長名字還會撐寬）縮成固定 56px，省下的寬度全部給 7 個格子，
+ * 格子才放得下 13px 的班別字。 */
+@media ( max-width: 782px ) {
+	/* 人員欄：固定寬度、名字最多兩行、不印排班方式（人員清單看得到）。 */
+	.uappt-wrap .uappt-roster .uappt-roster-name,
+	.uappt-wrap .uappt-roster .uappt-roster-corner {
+		width: 48px;
+		min-width: 48px;
+		max-width: 48px;
+		padding: 4px;
+	}
+
+	.uappt-wrap .uappt-roster-kind {
+		display: none;
+	}
+
+	.uappt-wrap .uappt-roster-row,
+	.uappt-wrap .uappt-roster-name-text {
+		display: -webkit-box;
+		-webkit-box-orient: vertical;
+		-webkit-line-clamp: 2;
+		overflow: hidden;
+		border-bottom: 0;
+		font-size: 12px;
+		line-height: 1.3;
+		overflow-wrap: anywhere;
+	}
+
+	/* 人名在手機上沒有底線提示了（兩行的虛線底線會切在字中間），改成整格可點的手感：
+	   按下去的那一下有底色。 */
+	.uappt-wrap .uappt-roster-row:active {
+		background: var( --uappt-color-primary-bg );
+	}
+
+	/* 格子：高 52px、班別字 13px 粗體。 */
+	.uappt-wrap .uappt-roster .uappt-roster-cell {
+		height: 52px;
+		padding: 0 1px;
+		font-size: 13px;
+	}
+
+	.uappt-wrap .uappt-roster-label {
+		font-weight: 600;
+	}
+
+	.uappt-wrap .uappt-roster-req {
+		font-size: 11px;
+	}
+
+	/* 日期標題與上班人數一起放大，不然格子大了標題反而顯得小。 */
+	.uappt-wrap .uappt-roster-day-num {
+		font-size: 15px;
+	}
+
+	.uappt-wrap .uappt-roster-day-wd {
+		font-size: 12px;
+	}
+
+	.uappt-wrap .uappt-roster tfoot .uappt-roster-count {
+		height: 40px;
+		font-size: 14px;
+	}
+}
+
+/* --- 月排班表的格子大小修正（v2.101.1）---
+ *
+ * 桌機「一週」：v2.95.0 讓週表 width:100% 撐滿整個寬度，結果 7 天被拉成每格 127px、
+ * 人員欄被撐到 344px——使用者回報「格子看起來太長」。改成照內容排：人員欄 120px、
+ * 每天 96px，外框跟著縮到表格的寬度（不然右邊留一大片白框）。
+ * ⚠️ 手機的週表維持 100%：那裡是 7 天剛好塞滿 375px，撐滿才是對的。 */
+@media ( min-width: 783px ) {
+	.uappt-wrap .uappt-roster[data-view="week"] {
+		width: auto;
+		min-width: 0;
+	}
+
+	.uappt-wrap .uappt-roster[data-view="week"] .uappt-roster-name,
+	.uappt-wrap .uappt-roster[data-view="week"] .uappt-roster-corner {
+		width: 120px;
+		min-width: 120px;
+		max-width: 120px;
+	}
+
+	.uappt-wrap .uappt-roster[data-view="week"] .uappt-roster-cell,
+	.uappt-wrap .uappt-roster[data-view="week"] .uappt-roster-col {
+		width: 96px;
+		min-width: 96px;
+	}
+
+	.uappt-wrap .uappt-roster-scroll:has( .uappt-roster[data-view="week"] ) {
+		width: fit-content;
+		max-width: 100%;
+	}
+}
+
+/* 手機「整月」：版型不動（橫向捲動、人名欄固定），格子從 41px 放寬到 50px——使用者
+   回報整月還是很擠。月檢視本來就要橫捲，多捲一點換每格放得下班別字與時間。 */
+@media ( max-width: 782px ) {
+	.uappt-wrap .uappt-roster[data-view="month"] .uappt-roster-cell,
+	.uappt-wrap .uappt-roster[data-view="month"] .uappt-roster-col {
+		min-width: 50px;
+	}
+}

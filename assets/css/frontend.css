@@ -1,0 +1,929 @@
+/**
+ * 顏色一律走 CSS 自訂屬性，並串接佈景主題的顏色變數，不寫死色碼：
+ * 1. --uappt-accent / --uappt-accent-text：可由子佈景或自訂 CSS 覆寫。
+ * 2. --theme-palette-color-1：Blocksy Pro 的自訂器調色盤主色。
+ * 3. --wp--preset--color--primary：區塊佈景主題（theme.json）常見的慣例色票名稱。
+ * 4. 最後才落到外掛預設的深藍灰色，確保沒有以上任何變數時外觀仍然完整。
+ * 換主題色時，這裡的按鈕、頁籤、連結會自動跟著變，不需要另外改外掛設定。
+ *
+ * 定義在 :root 而不是 .uappt-booking-widget 上，是因為「加入行事曆」連結
+ * （.uappt-calendar-links）會出現在結帳完成頁、會員我的預約頁——那些頁面
+ * 不會有預約時段選擇器的 wrapper，變數要能在整頁都取用得到。
+ */
+:root {
+	--uappt-accent: var( --theme-palette-color-1, var( --wp--preset--color--primary, #2c3e50 ) );
+	--uappt-accent-text: #fff;
+	--uappt-border: #ccc;
+	--uappt-border-hover: #999;
+	--uappt-muted: #666;
+
+	/* 表面色：卡片標題、面板、停用欄位那種「疊在別人底色上的淺色塊」。 */
+	--uappt-surface: #fafafa;
+	/* 比 --uappt-border 更淡的內部分隔線，兩種分隔才有層級差。 */
+	--uappt-divider: #f0f0f0;
+
+	/* ⚠️ **控制項的實心底，跟 --uappt-surface 不同，不要混用。**
+	 * 時段按鈕、分段頁籤這類東西必須是一塊不透明的底——半透明會透出頁面底色，
+	 * 而它們被選取時整塊換成主色，底下透出東西就糊了。
+	 * 外掛推導不出「這個佈景主題的不透明底色是什麼」（借頁面底色會讓按鈕跟
+	 * 背景融在一起），所以這個 token **刻意不自適應**：深色佈景主題請站主
+	 * 覆寫 `:root { --uappt-control-bg: … }`。 */
+	--uappt-control-bg: #fff;
+
+	/* 語意狀態色。**名稱與色值跟 admin.css 的 :root 一致**，前後台同一套詞彙，
+	 * 站主只要學一組。刻意不自適應——綠必須看起來是綠的。 */
+	--uappt-color-success: #2e7d32;
+	--uappt-color-warning: #e65100;
+	--uappt-color-danger: #d63638;
+	--uappt-color-info: #1565c0;
+	/* ⚠️ **這是實心填色，跟 --uappt-muted 不是同一件事，不要互換。**
+	 * --uappt-muted 是弱化「文字」，自適應時會變成半透明；徽章底色套上去會
+	 * 變成淺灰底配白字，讀不到。實心色塊一律用這一個。 */
+	--uappt-color-muted: #646970;
+
+	/* 月曆熱度色階。想換色系只要改這四個值（例如換成蜜糖色：
+	 * #fdf4e3 / #f8e3bd / #f0cd8f ＋ #a8710f），其餘規則都不用動。
+	 *
+	 * ⚠️ **定義在 :root 而不是 .uappt-cal--detail 上**（v2.75.0 搬的）：色階
+	 * 圖例（.uappt-cal-legend-swatch）是月曆格線的**兄弟節點**，不是後代
+	 * ——見 account-monthly-detail.php，格線由 require 進來、圖例接在後面。
+	 * 定義在容器上時圖例讀不到，只好自己複製一份色碼，結果就是改了色階、
+	 * 圖例沒跟著改。
+	 *
+	 * ⚠️ **這一組刻意不自適應。** 它是一條感知上的濃淡階梯，混進 currentColor
+	 * 之後階與階的間距會被壓掉，就不再是色階了。 */
+	--uappt-cal-busy-1: #f4f0fb;
+	--uappt-cal-busy-2: #e3d9f6;
+	--uappt-cal-busy-3: #cbbaee;
+	--uappt-cal-accent: #6d4aad;
+	/* 休假用帶一點紫的中性灰，跟班表那個純灰區隔開。 */
+	--uappt-cal-off: #e9e7ee;
+
+	/* 班表月曆的「有上班／休息」底色，跟上面的熱度階是兩回事。 */
+	--uappt-cal-open: #f1f8f2;
+	--uappt-cal-closed: #eceef0;
+
+	/* 陰影。深色佈景主題上黑色陰影會看不見——那是所有網站的陰影都一樣的事，
+	 * 不算壞掉，但留成 token 讓站主能換成淺色外光暈。 */
+	--uappt-shadow: 0 1px 4px rgba( 0, 0, 0, 0.12 );
+}
+
+/* 表面色與分隔線改成「跟著文字色調混」。
+ *
+ * ⚠️ **這是為了深色佈景主題。** 單純把 #fafafa 抽成變數並不會修好深色主題
+ * ——站主還是得自己覆寫一次才會對。混 currentColor 就不用：淺色主題的文字是
+ * 深的，混出來是淺灰底；深色主題的文字是淺的，混出來自動變成淺色疊加。外掛
+ * 不需要認得任何佈景主題，也不需要 prefers-color-scheme。
+ *
+ * ⚠️ **不要改成 var( --wp--preset--color--base ) 那種「借主題的背景色」。**
+ * 那個值就是頁面底色本身，卡片標題套上去會跟卡片完全一樣，等於沒有標題。
+ * 借來的變數語意只要差一點，結果就比寫死還糟。
+ *
+ * currentColor 在自訂屬性裡是**使用時**才解析的，所以寫在 :root 也會在各個
+ * 元素上各自算出正確的值。
+ *
+ * @supports 用具體色碼而不是 currentColor 來測：特性偵測沒有元素脈絡，用
+ * 具體值才問得乾淨。不支援 color-mix 的瀏覽器會整段忽略，留著上面的淺色
+ * 預設值——那正是改版前的外觀，不會倒退。 */
+@supports ( background: color-mix( in srgb, #000 4%, transparent ) ) {
+	:root {
+		--uappt-surface: color-mix( in srgb, currentColor 4%, transparent );
+		--uappt-divider: color-mix( in srgb, currentColor 8%, transparent );
+		/* 弱化文字同理：#666 在深色底上暗到讀不出來。混 60% 的文字色，淺色
+		 * 主題得到灰字、深色主題得到「比正文暗一階」的灰字，兩邊都還讀得到。 */
+		--uappt-muted: color-mix( in srgb, currentColor 60%, transparent );
+	}
+}
+
+.uappt-booking-widget {
+	margin: 1em 0 1.5em;
+	padding: 1em;
+	border: 1px solid var( --uappt-divider, #e0e0e0 );
+	border-radius: 6px;
+	background: var( --uappt-surface, #fafafa );
+}
+
+.uappt-booking-widget .uappt-field {
+	margin-bottom: 0.75em;
+}
+
+.uappt-booking-widget label {
+	display: block;
+	font-weight: 600;
+	margin-bottom: 0.35em;
+}
+
+.uappt-booking-widget .uappt-date-input,
+.uappt-booking-widget .uappt-staff-select {
+	padding: 0.5em 0.6em;
+	border: 1px solid var( --uappt-border );
+	border-radius: 4px;
+	min-width: 12em;
+}
+
+.uappt-slots-list {
+	min-height: 1.5em;
+}
+
+.uappt-slots-placeholder {
+	color: var( --uappt-muted );
+	font-size: 0.95em;
+	margin: 0;
+}
+
+.uappt-slot-buttons {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.5em;
+}
+
+.uappt-slot-btn {
+	padding: 0.5em 0.9em;
+	border: 1px solid var( --uappt-border );
+	border-radius: 4px;
+	background: var( --uappt-control-bg, #fff );
+	cursor: pointer;
+	font-size: 0.95em;
+}
+
+.uappt-slot-btn:hover {
+	border-color: var( --uappt-border-hover );
+}
+
+.uappt-slot-btn.is-selected {
+	background: var( --uappt-accent );
+	border-color: var( --uappt-accent );
+	color: var( --uappt-accent-text );
+}
+
+.uappt-slot-btn .uappt-slot-time {
+	display: block;
+}
+
+.uappt-slot-btn .uappt-slot-remaining {
+	display: block;
+	margin-top: 0.15em;
+	font-size: 0.8em;
+	opacity: 0.75;
+}
+
+.uappt-slot-btn.is-selected .uappt-slot-remaining {
+	opacity: 0.9;
+}
+
+.uappt-segment-tabs {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.4em;
+	margin-bottom: 0.75em;
+}
+
+.uappt-segment-tab {
+	padding: 0.4em 0.9em;
+	border: 1px solid var( --uappt-border );
+	border-radius: 999px;
+	background: var( --uappt-control-bg, #fff );
+	cursor: pointer;
+	font-size: 0.9em;
+}
+
+.uappt-segment-tab:hover {
+	border-color: var( --uappt-border-hover );
+}
+
+.uappt-segment-tab.is-active {
+	background: var( --uappt-accent );
+	border-color: var( --uappt-accent );
+	color: var( --uappt-accent-text );
+	font-weight: 600;
+}
+
+.uappt-next-available {
+	margin: 0.5em 0 0;
+	font-size: 0.95em;
+}
+
+.uappt-next-available-link {
+	background: none;
+	border: none;
+	padding: 0;
+	color: var( --uappt-accent );
+	text-decoration: underline;
+	cursor: pointer;
+	font-size: inherit;
+}
+
+.uappt-next-available-link:hover {
+	opacity: 0.8;
+}
+
+.uappt-selected-summary {
+	font-weight: 600;
+	margin: 0.75em 0 0;
+}
+
+.uappt-field-staff .uappt-staff-select {
+	width: 100%;
+	max-width: 24em;
+}
+
+/* 商品關閉「客人指定服務人員」時的唯讀替代顯示（見 class-uappt-frontend.php）。 */
+.uappt-field-staff-fixed .uappt-field-label {
+	display: block;
+	font-weight: 600;
+	margin-bottom: 0.35em;
+}
+.uappt-field-staff-fixed .uappt-field-value {
+	color: var( --uappt-muted, #50575e );
+}
+
+.single_add_to_cart_button.uappt-disabled,
+.single_add_to_cart_button.uappt-disabled:hover {
+	opacity: 0.5;
+	cursor: not-allowed;
+	pointer-events: none;
+}
+
+/* 加入行事曆連結。
+ *
+ * 基本款是純文字連結，給「行內」情境用：結帳完成頁（跟時間標籤同一行）、
+ * 訂單信與提醒信（Email 吃不到外部 CSS，加什麼 class 都沒用）。
+ * 按鈕外觀由 --buttons／--stacked 兩個修飾類別疊上去，見 render_links()。 */
+.uappt-calendar-links {
+	display: inline-flex;
+	flex-wrap: wrap;
+	gap: 0.75em;
+}
+
+.uappt-calendar-link {
+	font-size: 0.9em;
+	white-space: nowrap;
+	color: var( --uappt-accent, #2271b1 );
+}
+
+/* --- 按鈕外觀（我的預約頁）（v2.75.0） ---
+ *
+ * 刻意做「外框」而不是實心：同一列的「取消預約」是佈景主題的實心 .button，
+ * 那是破壞性且不可復原的動作。行事曆若做成同樣的實心按鈕，兩者視覺同權重，
+ * 取消的份量就被稀釋了。
+ *
+ * 也刻意**不借佈景主題的 .button**：借了就會跟取消鈕撞成同一個外觀，而且
+ * 客戶換佈景主題時這裡會跟著失控。用 --uappt-accent 自己畫，跟外掛其他前端
+ * 元件同一套色。 */
+.uappt-calendar-links--buttons {
+	gap: 0.5em;
+}
+
+.uappt-calendar-links--buttons .uappt-calendar-link {
+	display: inline-block;
+	padding: 0.45em 0.9em;
+	border: 1px solid var( --uappt-accent, #2271b1 );
+	border-radius: 4px;
+	line-height: 1.4;
+	text-align: center;
+	text-decoration: none;
+	transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.uappt-calendar-links--buttons .uappt-calendar-link:hover,
+.uappt-calendar-links--buttons .uappt-calendar-link:focus {
+	background: var( --uappt-accent, #2271b1 );
+	color: var( --uappt-accent-text, #fff );
+	text-decoration: none;
+}
+
+/* 縱向堆疊並等寬，給窄欄用（我的預約是六欄表格）。
+ *
+ * ⚠️ **兩個斷點刻意一致，不做響應式差異。** 堆疊不是為了「塞得下」——手機上
+ * shop_table_responsive 把表格攤平後欄位反而變全寬，橫排也放得下。堆疊的理由
+ * 是「兩顆的點擊目標一樣寬、一樣好按」，那個理由在兩個斷點都成立，所以沒有
+ * 該分岔的地方；硬做差異只是多一個要維護的斷點。
+ *
+ * ⚠️ **繼承基底的 inline-flex，千萬不要改成 flex。** WooCommerce 的
+ * `shop_table_responsive` 在 768px 以下會把 `td` 變成 `display: block`，並用
+ * **float: left** 的 `td::before` 放「行事曆:」那個標籤（見
+ * woocommerce-smallscreen.css）。浮動元素只會縮短相鄰的**行框**，不會縮短
+ * 區塊層級盒子的邊框盒——改成 flex（區塊層級）的話，按鈕會直接壓在標籤上。
+ * inline-flex 是行內層級，會乖乖被浮動推開。 */
+.uappt-calendar-links--stacked {
+	flex-direction: column;
+	align-items: stretch;
+}
+
+.uappt-thankyou-calendar ul {
+	list-style: none;
+	margin-left: 0;
+	padding-left: 0;
+}
+
+/* 時間與按鈕同一行，窄螢幕自動換行讓按鈕掉到下一行去（v2.75.0）。
+ * 這裡不用媒體查詢：換不換行由內容寬度自己決定，訂了兩個時段跟訂了一個的
+ * 可用寬度並不一樣，挑一個像素數字反而會挑錯。 */
+.uappt-thankyou-calendar li {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.5em 1em;
+	margin-bottom: 0.75em;
+}
+
+.uappt-thankyou-time {
+	font-weight: 600;
+}
+
+/* --- 我的預約：自行取消（v2.1.0） --- */
+.uappt-account-bookings-table .uappt-cancel-form {
+	margin: 0;
+}
+.uappt-account-bookings-table .uappt-cancel-locked {
+	color: var( --uappt-muted, #767676 );
+	font-size: 0.85em;
+}
+
+/* --- 我的預約：手機版把每一筆做成卡片（v2.75.0） ---
+ *
+ * WooCommerce 的 shop_table_responsive 在窄螢幕只把 `tr` 攤平成一疊 `td`，
+ * 筆與筆之間唯一的區隔是 `tr:nth-child(2n) td` 那層 2.5% 的淺灰——而分隔線
+ * 的粗細顏色跟儲存格內部的線一模一樣，所以看不出哪裡是一筆的結束。
+ *
+ * ⚠️ **斷點必須是 768px**，跟 woocommerce-smallscreen.css 掛載時用的
+ * `<link media="only screen and (max-width: 768px)">` 對齊。這裡不是自己挑的
+ * 數字，是跟著別人的斷點走——它改了這裡要跟著改，否則會出現「攤平了但沒有
+ * 卡片」或反過來的破口。
+ *
+ * ⚠️ **選擇器刻意帶 `.woocommerce`**：WooCommerce 那些攤平規則全部以
+ * `.woocommerce` / `.woocommerce-page` 開頭，佈景主題沒加那個 class 的話表格
+ * 根本不會攤平，我們的卡片也就不該出現。跟著同一個條件走是對的。
+ *
+ * 權重都算過，不靠載入順序：
+ *   WooCommerce `.woocommerce table.shop_table_responsive tr`            (0,2,2)
+ *   這裡        `.woocommerce table.uappt-account-bookings-table tbody tr` (0,2,3) ✔
+ *   WooCommerce `… tr:nth-child(2n) td`                                  (0,3,3)
+ *   這裡        `… tbody tr:nth-child(2n) td`                            (0,3,4) ✔ */
+@media screen and ( max-width: 768px ) {
+
+	.woocommerce table.uappt-account-bookings-table tbody tr,
+	.woocommerce-page table.uappt-account-bookings-table tbody tr {
+		display: block;
+		margin: 0 0 1.25em;
+		border: 1px solid var( --uappt-border, #ccc );
+		border-radius: 6px;
+		/* 讓第一格的底色被圓角裁切，卡片頂端才不會露出直角。 */
+		overflow: hidden;
+	}
+
+	/* 隔行底色關掉：每一筆已經是一張有外框的卡片，再交替變灰會像是壞掉。 */
+	.woocommerce table.uappt-account-bookings-table tbody tr:nth-child(2n) td,
+	.woocommerce-page table.uappt-account-bookings-table tbody tr:nth-child(2n) td {
+		background-color: transparent;
+	}
+
+	/* 儲存格之間用比卡片外框更淺的線，兩種分隔才有層級差。 */
+	.woocommerce table.uappt-account-bookings-table tbody tr td,
+	.woocommerce-page table.uappt-account-bookings-table tbody tr td {
+		border: 0;
+		border-top: 1px solid var( --uappt-divider, #f0f0f0 );
+		padding: 0.6em 0.9em;
+	}
+
+	/* 第一格（服務項目）當卡片標題。
+	 *
+	 * 拿掉 `data-title` 前綴：服務名稱出現在卡片最上面那一行，位置本身就說明
+	 * 了它是什麼，「服務項目:」四個字只是佔掉標題的寬度。
+	 *
+	 * `text-align` 要 `!important` 才蓋得過 WooCommerce 的
+	 * `tr td { text-align: right!important }`——是它先用的，這裡只能跟上。 */
+	.woocommerce table.uappt-account-bookings-table tbody tr td:first-child,
+	.woocommerce-page table.uappt-account-bookings-table tbody tr td:first-child {
+		border-top: 0;
+		padding: 0.75em 0.9em;
+		background: var( --uappt-surface, #fafafa );
+		font-weight: 600;
+		font-size: 1.05em;
+		text-align: left !important;
+	}
+
+	.woocommerce table.uappt-account-bookings-table tbody tr td:first-child::before,
+	.woocommerce-page table.uappt-account-bookings-table tbody tr td:first-child::before {
+		display: none;
+	}
+}
+
+/* --- 團體預約：報名人數欄位（v2.5.0） --- */
+.uappt-field-participants .uappt-participants-input {
+	width: 5em;
+	padding: 0.5em 0.6em;
+	border: 1px solid var( --uappt-border );
+	border-radius: 4px;
+}
+
+.uappt-field-participants .uappt-participants-input:disabled {
+	background: var( --uappt-surface, #f0f0f0 );
+	color: var( --uappt-muted );
+	cursor: not-allowed;
+}
+
+.uappt-field-participants .uappt-field-hint {
+	margin: 0.35em 0 0;
+	font-size: 0.85em;
+	color: var( --uappt-muted );
+}
+
+/* --- 暫停接受預約的提示（v2.1.1） --- */
+.uappt-paused-notice {
+	background: var( --uappt-surface, #f6f6f6 );
+	border-left: 3px solid var( --uappt-color-danger, #d63638 );
+	/* ⚠️ 刻意**不設** color：底色已經是自適應的半透明色塊，文字跟著佈景主題
+	   繼承才會對。寫死 #444 的話，深色佈景主題會變成淺底配深字。 */
+	margin: 1em 0;
+	padding: 0.85em 1em;
+}
+
+/* --- 前台員工中心「我的班表」（v2.16.0） ---
+   跟後台 admin.css 的 .uappt-badge-* 是同一套色彩語意，但前台頁面不會載入
+   admin.css，所以這裡要有自己的一份。
+   v2.75.0 起兩邊用**同名同值**的 token（--uappt-color-success / -warning /
+   -danger / -info / -muted），站主只要學一組詞彙；改其中一支樣式表的色值時
+   記得另一支也要改。 */
+.uappt-badge {
+	display: inline-block;
+	padding: 0.15em 0.6em;
+	border-radius: 3px;
+	font-size: 0.8em;
+	color: var( --uappt-accent-text, #fff );
+	background: var( --uappt-color-muted, #646970 );
+	/* 中文沒有詞界，容器一窄就會把「已逾時釋放」拆成一個字一行的直排色塊，
+	   整列跟著被撐高——徽章永遠不斷行。 */
+	white-space: nowrap;
+}
+.uappt-badge-success {
+	background: var( --uappt-color-success, #2e7d32 );
+}
+.uappt-badge-warning {
+	background: var( --uappt-color-warning, #e65100 );
+}
+.uappt-badge-error {
+	background: var( --uappt-color-danger, #d63638 );
+}
+.uappt-badge-info {
+	background: var( --uappt-color-info, #1565c0 );
+}
+.uappt-badge-muted {
+	background: var( --uappt-color-muted, #646970 );
+}
+
+.uappt-schedule-day {
+	border: 1px solid var( --uappt-border );
+	border-radius: 6px;
+	padding: 0.85em 1em;
+	margin-bottom: 0.75em;
+}
+.uappt-schedule-day.is-today {
+	border-color: var( --uappt-accent );
+}
+.uappt-schedule-day-head {
+	display: flex;
+	align-items: center;
+	gap: 0.6em;
+	flex-wrap: wrap;
+	margin-bottom: 0.5em;
+}
+.uappt-schedule-hours {
+	color: var( --uappt-muted );
+	font-size: 0.9em;
+}
+.uappt-schedule-empty {
+	color: var( --uappt-muted );
+	font-size: 0.9em;
+	margin: 0;
+}
+.uappt-schedule-bookings {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+}
+.uappt-schedule-booking {
+	padding: 0.5em 0;
+	border-top: 1px solid var( --uappt-divider, #eee );
+}
+.uappt-schedule-booking:first-child {
+	border-top: none;
+}
+.uappt-schedule-booking-head {
+	display: flex;
+	align-items: center;
+	gap: 0.6em;
+	flex-wrap: wrap;
+}
+.uappt-schedule-booking-time {
+	font-weight: 600;
+}
+.uappt-schedule-customer {
+	color: var( --uappt-muted );
+	font-size: 0.9em;
+}
+.uappt-schedule-booking-actions {
+	display: flex;
+	align-items: center;
+	gap: 0.5em;
+	flex-wrap: wrap;
+	margin-top: 0.4em;
+}
+.uappt-schedule-note-form {
+	display: flex;
+	align-items: center;
+	gap: 0.4em;
+	flex: 1 1 260px;
+}
+.uappt-schedule-note-input {
+	flex: 1 1 auto;
+}
+.uappt-schedule-inline-form {
+	margin: 0;
+	display: inline-flex;
+}
+.uappt-schedule-pending-list {
+	list-style: none;
+	margin: 0 0 1em;
+	padding: 0;
+}
+.uappt-schedule-pending-list li {
+	padding: 0.5em 0;
+	border-bottom: 1px solid var( --uappt-divider, #eee );
+}
+.uappt-schedule-pending-head {
+	display: flex;
+	align-items: center;
+	gap: 0.75em;
+	flex-wrap: wrap;
+}
+.uappt-schedule-pending-range {
+	font-weight: 600;
+}
+.uappt-schedule-pending-detail-text {
+	color: var( --uappt-muted );
+	font-size: 0.9em;
+}
+/* 撤回鍵一律靠右，整批與逐日兩層才會對齊在同一條垂直線上。 */
+.uappt-schedule-pending-head .uappt-schedule-inline-form,
+.uappt-schedule-pending-days li .uappt-schedule-inline-form {
+	margin-left: auto;
+}
+.uappt-schedule-pending-days {
+	margin-top: 0.5em;
+}
+.uappt-schedule-pending-days summary {
+	cursor: pointer;
+	font-size: 0.9em;
+	color: var( --uappt-accent );
+}
+.uappt-schedule-pending-days > ul {
+	list-style: none;
+	margin: 0.4em 0 0;
+	padding: 0 0 0 0.75em;
+	border-left: 2px solid var( --uappt-border );
+}
+.uappt-schedule-pending-days li {
+	display: flex;
+	align-items: center;
+	gap: 0.6em;
+	flex-wrap: wrap;
+	padding: 0.3em 0;
+	border-bottom: none;
+}
+.uappt-schedule-pending-day-date {
+	font-variant-numeric: tabular-nums;
+}
+/* --- 我的班表：月曆檢視（v2.17.0） ---
+   排班的實務單位是一週／一個月，月曆比逐日直式清單更貼近真實排班習慣，也是
+   「勾選多天一次送出申請」唯一說得通的介面。窄螢幕退回逐日清單（見下方
+   max-width: 600px），月曆格線在手機上放不下太多資訊。 */
+.uappt-cal-nav {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 1em;
+	margin: 0.75em 0 1em;
+}
+.uappt-cal-nav-label {
+	min-width: 8em;
+	text-align: center;
+}
+.uappt-cal-weekday-head {
+	display: grid;
+	grid-template-columns: repeat( 7, 1fr );
+	gap: 4px;
+	font-weight: 600;
+	color: var( --uappt-muted );
+	text-align: center;
+	margin-bottom: 4px;
+}
+.uappt-cal-week {
+	display: grid;
+	grid-template-columns: repeat( 7, 1fr );
+	gap: 4px;
+	margin-bottom: 4px;
+}
+.uappt-cal-day {
+	display: flex;
+	flex-direction: column;
+	gap: 0.25em;
+	min-height: 5.5em;
+	padding: 0.35em;
+	border: 1px solid var( --uappt-border );
+	border-radius: 4px;
+	font-size: 0.85em;
+	cursor: default;
+}
+.uappt-cal-day:has( .uappt-cal-checkbox ) {
+	cursor: pointer;
+}
+.uappt-cal-day:has( .uappt-cal-checkbox:checked ) {
+	border-color: var( --uappt-accent );
+	background: color-mix( in srgb, var( --uappt-accent ) 12%, transparent );
+}
+.uappt-cal-day.is-outside {
+	opacity: 0.4;
+}
+.uappt-cal-day.is-today {
+	border-color: var( --uappt-accent );
+	border-width: 2px;
+}
+.uappt-cal-day.is-unset {
+	background: var( --uappt-surface, #fafafa );
+}
+.uappt-cal-day .uappt-cal-checkbox {
+	align-self: flex-end;
+}
+.uappt-cal-day-num {
+	font-weight: 600;
+}
+.uappt-cal-day-num a {
+	text-decoration: none;
+}
+.uappt-cal-day-body {
+	display: flex;
+	flex-direction: column;
+	gap: 0.15em;
+}
+.uappt-cal-range {
+	color: var( --uappt-muted );
+}
+.uappt-cal-source {
+	font-size: 0.85em;
+	font-style: italic;
+	color: var( --uappt-muted );
+}
+.uappt-cal-count {
+	font-size: 0.85em;
+	color: var( --uappt-muted );
+}
+
+/* --- 本月明細的月曆（v2.23.0，配色與互動於 v2.26.0 重做） ---
+
+   跟「我的班表」共用同一份格線 partial，但**視覺刻意做得不一樣**：兩頁切來
+   切去時要能一眼認出自己在哪一頁，而且兩頁的底色講的本來就是不同的事——
+   班表講「有沒有班」（綠／灰），明細講「當天忙不忙」（紫色濃淡）。
+
+   為什麼選紫：
+   1. 跟班表的綠完全分得開，切頁籤時不會以為自己沒切到
+   2. 單一色相的濃淡階梯是表達「量」最直覺的方式，不用看數字就知道哪天滿
+   3. 紅／橘會被讀成警告，但「這天客人多」是好事，不該用警示色
+   4. 最深的 busy-3 底色上，深色文字的對比仍然超過 7:1，不必換成白字
+
+   ⚠️ 色階變數 v2.75.0 起定義在檔案開頭的 :root（原本在 .uappt-cal--detail
+   上，圖例是兄弟節點讀不到）。想換色系改那裡，其餘規則都不用動。 */
+.uappt-cal--detail .uappt-cal-day.is-busy-1 {
+	background: var( --uappt-cal-busy-1 );
+}
+.uappt-cal--detail .uappt-cal-day.is-busy-2 {
+	background: var( --uappt-cal-busy-2 );
+}
+.uappt-cal--detail .uappt-cal-day.is-busy-3 {
+	background: var( --uappt-cal-busy-3 );
+}
+.uappt-cal--detail .uappt-cal-day.is-closed {
+	background: var( --uappt-cal-off );
+}
+
+/* 整格都可以點（v2.26.0）。點一個小小的日期數字在手機上很難瞄準，整格是一個
+   60px 以上的目標。用 <a> 而不是 JS 綁 click，鍵盤 Tab、右鍵開新分頁、長按
+   預覽全部免費拿到——但也因此要自己把連結的預設樣式拿掉。 */
+a.uappt-cal-day {
+	color: inherit;
+	text-decoration: none;
+	cursor: pointer;
+	transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+a.uappt-cal-day:hover,
+a.uappt-cal-day:focus-visible {
+	border-color: var( --uappt-cal-accent, var( --uappt-accent ) );
+	box-shadow: var( --uappt-shadow, 0 1px 4px rgba( 0, 0, 0, 0.12 ) );
+}
+a.uappt-cal-day:focus-visible {
+	outline: 2px solid var( --uappt-cal-accent, var( --uappt-accent ) );
+	outline-offset: 1px;
+}
+
+/* 選取那一天。**刻意不用底色**表達——底色已經被「忙不忙」佔走了，再疊一層
+   會分不清哪個訊號在講什麼。改成日期數字變成實心圓，那是行事曆界通用的
+   「你現在看的是這天」，而且在手機上比邊框更看得出來。 */
+.uappt-cal--detail .uappt-cal-day.is-selected {
+	border-color: var( --uappt-cal-accent );
+	box-shadow: 0 0 0 1px var( --uappt-cal-accent ) inset;
+}
+.uappt-cal--detail .uappt-cal-day.is-selected .uappt-cal-day-num {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	/* 格子是 flex column、預設 align-items: stretch，不把自己收回去的話這顆圓
+	   會被拉成一條橫跨整格的色塊。 */
+	align-self: flex-start;
+	min-width: 1.75em;
+	height: 1.75em;
+	border-radius: 999px;
+	background: var( --uappt-cal-accent );
+	color: var( --uappt-accent-text, #fff );
+}
+
+/* 預約時間：這一頁的主角。桌機一格最多印三筆，手機只留第一筆（見下方斷點）。 */
+.uappt-cal-times {
+	display: flex;
+	flex-direction: column;
+	gap: 0.1em;
+}
+.uappt-cal-time {
+	font-weight: 600;
+	color: var( --uappt-cal-accent, inherit );
+	font-variant-numeric: tabular-nums;
+}
+
+/* 濃淡圖例。沒有它的話「為什麼有些格子比較深」要自己猜。 */
+.uappt-cal-legend {
+	display: flex;
+	align-items: center;
+	gap: 0.5em;
+	flex-wrap: wrap;
+	margin: 0.5em 0 1em;
+	font-size: 0.85em;
+	color: var( --uappt-muted );
+}
+.uappt-cal-legend-scale,
+.uappt-cal-legend-item {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.3em;
+}
+.uappt-cal-legend-item {
+	margin-left: 0.5em;
+}
+.uappt-cal-legend-swatch {
+	width: 14px;
+	height: 14px;
+	border: 1px solid var( --uappt-border );
+	border-radius: 3px;
+}
+/* 圖例讀的必須是月曆格線那一組變數，不能自己再寫一份色碼——寫死的那版
+   已經發生過「改了色階、圖例沒跟著改」。變數提到 :root 就是為了這件事。 */
+.uappt-cal-legend-swatch.is-busy-0 { background: var( --uappt-control-bg, #fff ); }
+.uappt-cal-legend-swatch.is-busy-1 { background: var( --uappt-cal-busy-1, #f4f0fb ); }
+.uappt-cal-legend-swatch.is-busy-2 { background: var( --uappt-cal-busy-2, #e3d9f6 ); }
+.uappt-cal-legend-swatch.is-busy-3 { background: var( --uappt-cal-busy-3, #cbbaee ); }
+.uappt-cal-legend-swatch.is-closed { background: var( --uappt-cal-off, #e9e7ee ); }
+
+/* 格子是 flex column，badge 預設會被拉成整格寬的色條——「休假」兩個字配一條
+   跨滿格的底色，比它實際的份量搶眼太多。讓它縮回文字本身的寬度。
+   （手機版把 badge 縮成圓點，那邊有自己的規則，不受這條影響。） */
+.uappt-cal-day-body .uappt-badge {
+	align-self: flex-start;
+}
+.uappt-cal-amount,
+.uappt-cal-month-total {
+	font-size: 0.85em;
+	color: var( --uappt-muted );
+}
+.uappt-cal-month-total {
+	display: block;
+	font-weight: 400;
+}
+.uappt-schedule-day-total,
+.uappt-schedule-booking-amount {
+	color: var( --uappt-muted );
+}
+.uappt-cal-toolbar {
+	display: flex;
+	align-items: center;
+	gap: 0.75em;
+	flex-wrap: wrap;
+}
+
+/* 手機：保留月曆格線，改成「日期＋狀態色」的精簡格子。
+
+   舊版在窄螢幕退回逐日清單，一個月就是三十幾列，要一直捲才看得完——當初
+   從清單改成月曆的兩個理由（一眼看出整個月的形狀、勾選多天一次送出申請）
+   等於又被丟掉了。真正塞不下的是時段文字，不是格線本身：7 欄在 360px 的
+   螢幕上每格仍有 48px 左右，放得下日期與狀態點。時段細節改由底色與圓點
+   表達，要看確切時間就點日期跳到下方「本月明細」。 */
+@media ( max-width: 600px ) {
+	.uappt-cal-weekday-head {
+		gap: 2px;
+		font-size: 0.8em;
+	}
+	.uappt-cal-week {
+		gap: 2px;
+		margin-bottom: 2px;
+	}
+	.uappt-cal-day {
+		position: relative;
+		align-items: center;
+		text-align: center;
+		min-height: 46px;
+		padding: 2px;
+		gap: 2px;
+		font-size: 0.72em;
+	}
+	/* checkbox 自己佔一列會把 46px 的格子吃掉一半，疊到右上角。 */
+	.uappt-cal-day .uappt-cal-checkbox {
+		position: absolute;
+		top: 1px;
+		right: 1px;
+		width: 12px;
+		height: 12px;
+		margin: 0;
+	}
+	.uappt-cal-day-num {
+		font-size: 1.25em;
+		line-height: 1.2;
+	}
+	/* 金額塞不進格子；班表的時段文字與調整來源同理。確切內容點進去看。 */
+	.uappt-cal-range,
+	.uappt-cal-source,
+	.uappt-cal-amount {
+		display: none;
+	}
+	.uappt-cal-day-body {
+		flex-direction: row;
+		flex-wrap: wrap;
+		align-items: center;
+		justify-content: center;
+		gap: 2px;
+	}
+	/* 休假／待審核的 badge 縮成純色圓點：文字在這個尺寸本來就讀不到，而
+	   顏色一直是它主要的訊號，縮小不會少掉資訊（明細區仍有完整文字）。 */
+	.uappt-cal-day-body .uappt-badge {
+		width: 6px;
+		height: 6px;
+		padding: 0;
+		border-radius: 50%;
+		font-size: 0;
+		line-height: 0;
+		overflow: hidden;
+	}
+	/* 時段文字拿掉之後，「今天到底有沒有班」只剩底色能分辨。 */
+	.uappt-cal-day.is-open {
+		background: var( --uappt-cal-open, #f1f8f2 );
+	}
+	.uappt-cal-day.is-closed {
+		background: var( --uappt-cal-closed, #eceef0 );
+	}
+	.uappt-cal-day:has( .uappt-cal-checkbox:checked ) {
+		background: color-mix( in srgb, var( --uappt-accent ) 18%, transparent );
+	}
+	/* 非本月的日子淡化就好，不能 display:none——格線是 7 欄 grid，少掉任何
+	   一格，後面所有日期都會位移到錯誤的星期底下。 */
+	.uappt-cal-day.is-outside {
+		opacity: 0.35;
+	}
+
+	/* --- 本月明細的手機版（v2.26.0） ---
+
+	   班表那邊把格子壓到 46px、資訊全部縮成圓點，因為那一頁手機上真正要看的
+	   只有「這天有沒有班」。明細這一頁不一樣：**員工要的就是「幾點有客人」**，
+	   所以格子放高一點（60px）把第一筆時間留下來——多出來的 14px 換一個不用
+	   點進去就看得到的答案，很划算。第二、三筆放不下，用「N 筆」補足。 */
+	.uappt-cal--detail .uappt-cal-day {
+		min-height: 60px;
+		gap: 1px;
+	}
+	.uappt-cal--detail .uappt-cal-time:not( .is-first ) {
+		display: none;
+	}
+	.uappt-cal--detail .uappt-cal-time.is-first {
+		font-size: 1.15em;
+		line-height: 1.2;
+	}
+	.uappt-cal--detail .uappt-cal-count {
+		font-size: 0.9em;
+		line-height: 1.1;
+	}
+	/* 休假在這個尺寸下靠底色表達就夠了。縮成一顆灰圓點反而看不懂是什麼意思
+	   （班表那邊有「有班＝綠底」當對照，這一頁沒有）。 */
+	.uappt-cal--detail .uappt-cal-day-body .uappt-badge {
+		display: none;
+	}
+	/* 選取的實心圓在 46–60px 的格子裡要縮一點，不然會把日期數字擠到貼邊。 */
+	.uappt-cal--detail .uappt-cal-day.is-selected .uappt-cal-day-num {
+		min-width: 1.5em;
+		height: 1.5em;
+	}
+}
