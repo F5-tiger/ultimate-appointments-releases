@@ -99,7 +99,14 @@
 			ranges = [];
 		}
 
-		$dayForm.find( '#uappt-override-date' ).val( date );
+		// 日期欄位是 flatpickr（v3.3.0）：直接 .val() 的話輸入框看起來對了，打開月曆卻
+		// 還停在舊日期，要走 setValue()。
+		var $overrideDate = $dayForm.find( '#uappt-override-date' );
+		if ( window.UAPPT_Datepicker && $overrideDate.length ) {
+			window.UAPPT_Datepicker.setValue( $overrideDate[ 0 ], date );
+		} else {
+			$overrideDate.val( date );
+		}
 		$dayForm.find( '#uappt-override-note' ).val( note || '' );
 
 		// 點不同狀態的日子，預設選哪個類型：

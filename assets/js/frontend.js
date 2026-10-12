@@ -332,8 +332,116 @@
 				} );
 		}
 
+		// --- 日期月曆：把沒有空位、沒開放的日子灰掉（v3.3.0）------------------------
+		//
+		// 原生日期欄位做不到逐日停用，換成 flatpickr 之後才有這個能力。資料用前台預約精靈
+		// 日期列同一支 /days 端點，判斷邏輯完全相同（UAPPT_Booking::get_day_availability()）
+		// ——兩邊說法不一致的話，客人會看到「這邊說有位、那邊說沒有」。
+		//
+		// 一次查一個月（月曆前後露出的幾天一起查），翻月才查下一個；方案或人員一換就全部
+		// 作廢重查，因為有沒有位跟時長、指定的人都有關。
+		//
+		// ⚠️ 還沒查到、或查詢失敗的日子一律**放行**：寧可讓客人點進去看到「沒有時段」，
+		// 也不要因為一次網路錯誤整個月都不能選。過去與超出開放天數由 minDate／maxDate 擋。
+		var picker = window.UAPPT_Datepicker ? window.UAPPT_Datepicker.init( $dateInput[ 0 ] ) : null;
+		var dayStatus = {};
+		var fetchedMonths = {};
+		var availabilitySeq = 0;
+
+		function toYmd( date ) {
+			return picker.formatDate( date, 'Y-m-d' );
+		}
+
+		function resetAvailability() {
+			dayStatus = {};
+			fetchedMonths = {};
+			availabilitySeq++;
+			if ( picker ) {
+				picker.redraw();
+			}
+		}
+
+		function fetchVisibleMonth() {
+			if ( ! picker || ! UAPPT_Frontend.days_url ) {
+				return;
+			}
+			// 有方案卻還沒選：不知道時長，查出來也不準，先全部放行。
+			if ( hasPlans && ! getPlanKey() ) {
+				return;
+			}
+
+			var monthKey = picker.currentYear + '-' + picker.currentMonth;
+			if ( fetchedMonths[ monthKey ] ) {
+				return;
+			}
+			fetchedMonths[ monthKey ] = true;
+
+			var from = new Date( picker.currentYear, picker.currentMonth, 1 - 7 );
+			var to = new Date( picker.currentYear, picker.currentMonth + 1, 7 );
+			if ( picker.config.minDate && from < picker.config.minDate ) {
+				from = picker.config.minDate;
+			}
+			if ( picker.config.maxDate && to > picker.config.maxDate ) {
+				to = picker.config.maxDate;
+			}
+			if ( from > to ) {
+				return;
+			}
+
+			var seq = availabilitySeq;
+			$.ajax( {
+				url: UAPPT_Frontend.days_url,
+				method: 'GET',
+				dataType: 'json',
+				data: {
+					product_id: productId,
+					plan_key: getPlanKey(),
+					staff_id: getStaffId(),
+					from: toYmd( from ),
+					to: toYmd( to ),
+				},
+			} )
+				.done( function ( response ) {
+					// 查詢途中換了方案或人員：這份答案已經不是現在的問題了。
+					if ( seq !== availabilitySeq || ! response || ! response.days ) {
+						return;
+					}
+					$.extend( dayStatus, response.days );
+					picker.redraw();
+				} )
+				.fail( function () {
+					if ( seq === availabilitySeq ) {
+						delete fetchedMonths[ monthKey ]; // 下次翻回來再試一次。
+					}
+				} );
+		}
+
+		if ( picker ) {
+			picker.set( 'disable', [
+				function ( date ) {
+					var status = dayStatus[ toYmd( date ) ];
+					return 'full' === status || 'closed' === status;
+				},
+			] );
+			picker.config.onDayCreate.push( function ( selectedDates, dateStr, instance, dayElem ) {
+				var status = dayStatus[ toYmd( dayElem.dateObj ) ];
+				if ( 'full' === status ) {
+					dayElem.title = UAPPT_Frontend.i18n.day_full;
+				} else if ( 'closed' === status ) {
+					dayElem.title = UAPPT_Frontend.i18n.day_closed;
+				}
+			} );
+			picker.config.onOpen.push( fetchVisibleMonth );
+			picker.config.onMonthChange.push( fetchVisibleMonth );
+			picker.config.onYearChange.push( fetchVisibleMonth );
+		}
+
 		$dateInput.on( 'change', loadSlots );
 		$staffSelect.on( 'change', loadSlots );
+		$staffSelect.on( 'change', function () {
+			resetAvailability();
+			fetchVisibleMonth();
+		} );
 
 		$slotsList.on( 'click', '.uappt-segment-tab', function () {
 			activeSegment = $( this ).data( 'segment' );
@@ -384,10 +492,16 @@
 				return;
 			}
 
-			refreshStaffOptions( loadSlots );
+			refreshStaffOptions( function () {
+				resetAvailability();
+				fetchVisibleMonth();
+				loadSlots();
+			} );
 		} );
 
 		renderMessage( initialMessage() );
+		// 沒有方案的商品（或方案已預選）一進頁面就先查這個月，客人打開月曆時已經灰好了。
+		fetchVisibleMonth();
 		syncSubmitState();
 	}
 

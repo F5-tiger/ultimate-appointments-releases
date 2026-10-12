@@ -5,6 +5,7 @@
  * ——商品類型本身就是開關，這個分頁只在「預約商品」出現。
  *
  * v2.1.2：加入沿用值即時顯示、進階展開層、拖曳排序、送出前的名稱驗證。
+ * v3.3.0：卡片可以收合成一行（名稱＋摘要），工具列有方案數與全部展開／收合。
  */
 ( function ( $ ) {
 	'use strict';
@@ -42,6 +43,116 @@
 
 	function syncEmptyNotice() {
 		$( '.uappt-plans-empty' ).toggle( $rows().find( '.uappt-plan-row' ).length === 0 );
+		syncToolbar();
+	}
+
+	/* --- 收合（v3.3.0）--------------------------------------------------------
+	 *
+	 * 一張卡片約 220px，十個方案就超過兩千；收合之後一個方案只剩一行：名稱＋摘要標籤
+	 * （時長、售價、人員、暫停銷售）。摘要不只放名稱，是因為收合的目的是「一眼看完所有
+	 * 方案」——只有名稱的話，要確認價格又得一個個打開。
+	 *
+	 * ⚠️ 收合狀態是 JS 載入後才套上的，PHP 輸出的是展開的卡片：這支 JS 沒載入的話，卡片
+	 * 至少還是能直接編輯，不會全部縮著打不開。
+	 */
+	function fmt( template, value ) {
+		return String( template || '' ).replace( /%[sd]/, value );
+	}
+
+	function formatPrice( raw ) {
+		var n = parseFloat( String( raw ).replace( /,/g, '' ) );
+		if ( isNaN( n ) ) {
+			return String( raw );
+		}
+		return ( i18n.currency || '' ) + n.toLocaleString( 'zh-TW', { maximumFractionDigits: 2 } );
+	}
+
+	function addChip( $chips, text, extraClass, title ) {
+		var $chip = $( '<span class="uappt-plan-chip"></span>' ).text( text ).appendTo( $chips );
+		if ( extraClass ) {
+			$chip.addClass( extraClass );
+		}
+		if ( title ) {
+			$chip.attr( 'title', title );
+		}
+	}
+
+	/**
+	 * 從欄位算出收合那一行的名稱與摘要。欄位是唯一的來源，收起來看到的永遠是最新的值。
+	 * 留空（沿用商品層級的設定）的那幾項畫成淡色，跟自己填的分得出來。
+	 */
+	function refreshSummary( $row ) {
+		var name = $.trim( $row.find( '.uappt-plan-name' ).val() );
+		$row.find( '.uappt-plan-title' ).text( name || i18n.untitled ).toggleClass( 'is-empty', ! name );
+
+		var $chips = $row.find( '.uappt-plan-chips' ).empty();
+
+		var $duration = $row.find( '[data-field="duration"]' );
+		var duration = $.trim( $duration.val() );
+		if ( duration ) {
+			addChip( $chips, fmt( i18n.chip_minutes, duration ) );
+		} else {
+			addChip( $chips, fmt( i18n.chip_minutes, $duration.attr( 'data-inherit' ) ), 'is-inherited', i18n.chip_inherited );
+		}
+
+		var price = $.trim( $row.find( '.wc_input_price' ).val() );
+		if ( price ) {
+			addChip( $chips, formatPrice( price ) );
+		} else {
+			addChip( $chips, i18n.chip_price_inherit, 'is-inherited' );
+		}
+
+		var staffCount = $row.find( '.uappt-plan-staff option:selected' ).length;
+		if ( staffCount ) {
+			addChip( $chips, fmt( i18n.chip_staff_count, staffCount ) );
+		} else {
+			addChip( $chips, i18n.chip_staff_inherit, 'is-inherited' );
+		}
+
+		if ( $row.find( '.uappt-plan-inactive' ).is( ':checked' ) ) {
+			addChip( $chips, i18n.chip_inactive, 'is-inactive' );
+		}
+
+		if ( $row.hasClass( 'is-modified' ) ) {
+			addChip( $chips, i18n.chip_modified, 'is-modified' );
+		}
+	}
+
+	function setCollapsed( $row, collapsed ) {
+		if ( collapsed ) {
+			refreshSummary( $row );
+		}
+		$row.toggleClass( 'is-collapsed', collapsed );
+
+		var label = collapsed ? i18n.expand : i18n.collapse;
+		$row.find( '.uappt-plan-collapse' )
+			.attr( { 'aria-expanded': collapsed ? 'false' : 'true', title: label, 'aria-label': label } )
+			.find( '.dashicons' )
+			.toggleClass( 'dashicons-arrow-down-alt2', collapsed )
+			.toggleClass( 'dashicons-arrow-up-alt2', ! collapsed );
+
+		syncToolbar();
+	}
+
+	/**
+	 * 工具列：「共 N 個方案（M 個暫停銷售）」，以及「全部展開」／「全部收合」——還有任何
+	 * 一張收著就是「全部展開」，全部都開著才變成「全部收合」。
+	 */
+	function syncToolbar() {
+		var $all = $rows().find( '.uappt-plan-row' );
+		var inactive = $all.filter( function () {
+			return $( this ).find( '.uappt-plan-inactive' ).is( ':checked' );
+		} ).length;
+		var anyCollapsed = $all.filter( '.is-collapsed' ).length > 0;
+		var $bar = $( '.uappt-plans-toolbar' );
+
+		$bar.prop( 'hidden', ! $all.length );
+		$bar.find( '.uappt-plans-count' ).text(
+			fmt( i18n.plans_count, $all.length ) + ( inactive ? fmt( i18n.plans_inactive, inactive ) : '' )
+		);
+		$bar.find( '.uappt-plans-toggle-all' )
+			.text( anyCollapsed ? i18n.expand_all : i18n.collapse_all )
+			.data( 'collapse', ! anyCollapsed );
 	}
 
 	/**
@@ -113,6 +224,10 @@
 		$row.toggleClass( 'is-inactive', inactive );
 		$row.find( '.uappt-plan-inactive-badge' ).toggle( inactive );
 		refreshAdvancedDot( $row );
+		if ( $row.hasClass( 'is-collapsed' ) ) {
+			refreshSummary( $row );
+		}
+		syncToolbar();
 	}
 
 	/**
@@ -147,6 +262,214 @@
 			html = html.replace( re2, '$1' + text.replace( /"/g, '&quot;' ) + '$2' );
 			$template.html( html );
 		}
+	}
+
+	/* --- 批次編輯（v3.3.0）----------------------------------------------------
+	 *
+	 * 方案很多時要一次調價、換人、暫停：勾選幾個方案，在動作列選要做什麼。
+	 *
+	 * ⚠️ **只改各張卡片自己的欄位**，按商品的「更新」才跟著表單一起存。不另外開寫入路徑：
+	 * 一來寫入不用 AJAX 是設計紀律 #8，二來這樣「改到一半不想要了」只要不按更新就好，跟手動
+	 * 改卡片完全一樣。改到的方案加上「已修改」標籤。
+	 *
+	 * 進入批次模式時全部收合（清單才短）、拖曳與單張刪除先關掉，免得跟勾選打架。
+	 */
+	function $batch() {
+		return $( '.uappt-plans-batch' );
+	}
+
+	function isBatchMode() {
+		return $( '.uappt-plans-group' ).hasClass( 'is-batch' );
+	}
+
+	function $pickedRows() {
+		return $rows().find( '.uappt-plan-row.is-picked' );
+	}
+
+	function enterBatchMode() {
+		$rows()
+			.find( '.uappt-plan-row' )
+			.each( function () {
+				var $row = $( this );
+				setCollapsed( $row, true );
+				if ( ! $row.find( '.uappt-plan-pick' ).length ) {
+					$( '<input type="checkbox" class="uappt-plan-pick" />' ).prependTo( $row.find( '.uappt-plan-head' ) );
+				}
+			} );
+		$( '.uappt-plans-group' ).addClass( 'is-batch' );
+		$batch().prop( 'hidden', false );
+		$batch().find( '.uappt-batch-result' ).prop( 'hidden', true );
+		if ( $.fn.sortable && $rows().hasClass( 'ui-sortable' ) ) {
+			$rows().sortable( 'disable' );
+		}
+		syncBatchBar();
+	}
+
+	function exitBatchMode() {
+		$rows().find( '.uappt-plan-pick' ).remove();
+		$rows().find( '.uappt-plan-row' ).removeClass( 'is-picked' );
+		$( '.uappt-plans-group' ).removeClass( 'is-batch' );
+		$batch().prop( 'hidden', true );
+		closeBatchPanels();
+		if ( $.fn.sortable && $rows().hasClass( 'ui-sortable' ) ) {
+			$rows().sortable( 'enable' );
+		}
+		syncToolbar();
+	}
+
+	function setPicked( $row, picked ) {
+		$row.toggleClass( 'is-picked', picked );
+		$row.find( '.uappt-plan-pick' ).prop( 'checked', picked );
+	}
+
+	function syncBatchBar() {
+		var total = $rows().find( '.uappt-plan-row' ).length;
+		var picked = $pickedRows().length;
+		$batch().find( '.uappt-batch-count' ).text( fmt( i18n.batch_selected, picked ) );
+		$batch().find( '.uappt-batch-all' )
+			.prop( 'checked', total > 0 && picked === total )
+			.prop( 'indeterminate', picked > 0 && picked < total );
+		$batch().find( '.uappt-batch-actions .button' ).prop( 'disabled', ! picked );
+		if ( ! picked ) {
+			closeBatchPanels();
+		}
+	}
+
+	function closeBatchPanels() {
+		$batch().find( '.uappt-batch-panel' ).prop( 'hidden', true );
+		$batch().find( '.uappt-batch-open' ).removeClass( 'is-active' );
+	}
+
+	function openBatchPanel( name ) {
+		closeBatchPanels();
+		$batch().find( '.uappt-batch-panel[data-panel="' + name + '"]' ).prop( 'hidden', false );
+		$batch().find( '.uappt-batch-open[data-panel="' + name + '"]' ).addClass( 'is-active' );
+		$batch().find( '.uappt-batch-result' ).prop( 'hidden', true );
+		if ( 'staff' === name ) {
+			initEnhancedSelect( $batch().find( '.uappt-batch-panel[data-panel="staff"]' ) );
+		}
+	}
+
+	function showBatchResult( text ) {
+		$batch().find( '.uappt-batch-result' ).text( text ).prop( 'hidden', false );
+	}
+
+	function markModified( $row ) {
+		$row.addClass( 'is-modified' );
+		refreshSummary( $row );
+	}
+
+	/**
+	 * 售價寫回欄位：照 WooCommerce 的小數位數與小數點符號（wc_input_price 會用店家設定的
+	 * 小數點驗證，寫成 1200.5 而店家設定是逗號的話，存檔時會被當成格式錯誤）。
+	 */
+	function writePrice( $input, value ) {
+		var decimals = parseInt( i18n.price_decimals, 10 ) || 0;
+		var text = Math.max( 0, value ).toFixed( decimals );
+		$input.val( text.replace( '.', i18n.decimal_sep || '.' ) ).trigger( 'change' );
+	}
+
+	function readPrice( raw ) {
+		var sep = i18n.decimal_sep || '.';
+		return parseFloat( String( raw ).split( sep ).join( '.' ).replace( /[^0-9.\-]/g, '' ) );
+	}
+
+	function applyBatch( panel ) {
+		var $panel = $batch().find( '.uappt-batch-panel[data-panel="' + panel + '"]' );
+		var $targets = $pickedRows();
+		var skipped = 0;
+
+		if ( 'staff' === panel ) {
+			var mode = $panel.find( 'input[type="radio"]:checked' ).val();
+			var chosen = $panel.find( '.uappt-batch-staff' ).val() || [];
+			if ( 'inherit' !== mode && ! chosen.length ) {
+				window.alert( i18n.batch_need_staff );
+				return;
+			}
+			$targets.each( function () {
+				var $select = $( this ).find( '.uappt-plan-staff' );
+				var current = $select.val() || [];
+				var next;
+				if ( 'add' === mode ) {
+					next = current.concat( chosen.filter( function ( id ) { return current.indexOf( id ) === -1; } ) );
+				} else if ( 'remove' === mode ) {
+					next = current.filter( function ( id ) { return chosen.indexOf( id ) === -1; } );
+				} else if ( 'replace' === mode ) {
+					next = chosen.slice();
+				} else {
+					next = [];
+				}
+				$select.val( next ).trigger( 'change' );
+				markModified( $( this ) );
+			} );
+		} else if ( 'price' === panel ) {
+			var priceMode = $panel.find( 'input[type="radio"]:checked' ).val();
+			var amount = parseFloat( $panel.find( '.uappt-batch-price' ).val() );
+			if ( isNaN( amount ) ) {
+				window.alert( i18n.batch_need_number );
+				return;
+			}
+			$targets.each( function () {
+				var $input = $( this ).find( '.wc_input_price' );
+				var raw = $.trim( $input.val() );
+				if ( 'set' === priceMode ) {
+					writePrice( $input, amount );
+				} else if ( '' === raw || isNaN( readPrice( raw ) ) ) {
+					// 沿用商品售價的方案沒有自己的數字可以加減，跳過並告訴管理者。
+					skipped++;
+					return;
+				} else if ( 'amount' === priceMode ) {
+					writePrice( $input, readPrice( raw ) + amount );
+				} else {
+					writePrice( $input, readPrice( raw ) * ( 1 + amount / 100 ) );
+				}
+				markModified( $( this ) );
+			} );
+		} else if ( 'duration' === panel ) {
+			var raw = $.trim( $panel.find( '.uappt-batch-duration' ).val() );
+			var minutes = parseInt( raw, 10 );
+			if ( '' !== raw && ( isNaN( minutes ) || minutes < 5 ) ) {
+				window.alert( i18n.batch_need_number );
+				return;
+			}
+			$targets.each( function () {
+				$( this ).find( '[data-field="duration"]' ).val( '' === raw ? '' : minutes ).trigger( 'input' );
+				markModified( $( this ) );
+			} );
+		}
+
+		closeBatchPanels();
+		var applied = $targets.length - skipped;
+		showBatchResult( fmt( i18n.batch_applied, applied ) + ( skipped ? ' ' + fmt( i18n.batch_price_skipped, skipped ) : '' ) );
+	}
+
+	function applyBatchInactive( inactive ) {
+		var $targets = $pickedRows();
+		$targets.each( function () {
+			var $box = $( this ).find( '.uappt-plan-inactive' );
+			if ( $box.is( ':checked' ) !== inactive ) {
+				$box.prop( 'checked', inactive ).trigger( 'change' );
+				markModified( $( this ) );
+			}
+		} );
+		closeBatchPanels();
+		showBatchResult( fmt( i18n.batch_applied, $targets.length ) );
+	}
+
+	function deletePicked() {
+		var $targets = $pickedRows();
+		if ( ! $targets.length || ! window.confirm( fmt( i18n.batch_confirm_delete, $targets.length ) ) ) {
+			return;
+		}
+		var count = $targets.length;
+		$targets.remove();
+		syncEmptyNotice();
+		if ( ! $rows().find( '.uappt-plan-row' ).length ) {
+			exitBatchMode();
+			return;
+		}
+		syncBatchBar();
+		showBatchResult( fmt( i18n.batch_deleted, count ) );
 	}
 
 	/**
@@ -245,6 +568,11 @@
 		// 切到「預約設定」分頁——如果管理者是在別的分頁按下更新的。
 		$( '.wc-tabs a[href="#uappt_booking_product_data"]' ).trigger( 'click' );
 
+		// 收著的話先展開，名稱欄位跟錯誤訊息才看得到。
+		if ( $offender.hasClass( 'is-collapsed' ) ) {
+			setCollapsed( $offender, false );
+		}
+
 		var $panel = $offender.find( '.uappt-plan-advanced' );
 		if ( ! $panel.is( ':visible' ) ) {
 			$panel.show();
@@ -294,6 +622,76 @@
 		$( document ).on( 'click', '.uappt-remove-plan', function ( e ) {
 			e.preventDefault();
 			removePlanRow( $( this ) );
+		} );
+
+		$( document ).on( 'click', '.uappt-plan-collapse', function ( e ) {
+			e.preventDefault();
+			var $row = $( this ).closest( '.uappt-plan-row' );
+			setCollapsed( $row, ! $row.hasClass( 'is-collapsed' ) );
+		} );
+
+		// 收著的時候整行都可以點開（按鈕除外：刪除就是刪除，不要順便展開）。
+		$( document ).on( 'click', '.uappt-plan-row.is-collapsed .uappt-plan-head', function ( e ) {
+			if ( $( e.target ).closest( 'button, a' ).length ) {
+				return;
+			}
+			var $row = $( this ).closest( '.uappt-plan-row' );
+			// 批次模式：點整行就是勾選／取消（勾選框本身被點到時，瀏覽器已經切換過了）。
+			if ( isBatchMode() ) {
+				var $box = $row.find( '.uappt-plan-pick' );
+				setPicked( $row, $( e.target ).is( $box ) ? $box.prop( 'checked' ) : ! $row.hasClass( 'is-picked' ) );
+				syncBatchBar();
+				return;
+			}
+			setCollapsed( $row, false );
+		} );
+
+		$( document ).on( 'click', '.uappt-plans-batch-toggle', function ( e ) {
+			e.preventDefault();
+			enterBatchMode();
+		} );
+		$( document ).on( 'click', '.uappt-batch-done', function ( e ) {
+			e.preventDefault();
+			exitBatchMode();
+		} );
+		$( document ).on( 'change', '.uappt-batch-all', function () {
+			var on = $( this ).is( ':checked' );
+			$rows()
+				.find( '.uappt-plan-row' )
+				.each( function () {
+					setPicked( $( this ), on );
+				} );
+			syncBatchBar();
+		} );
+		$( document ).on( 'click', '.uappt-batch-open', function ( e ) {
+			e.preventDefault();
+			openBatchPanel( $( this ).data( 'panel' ) );
+		} );
+		$( document ).on( 'click', '.uappt-batch-cancel', function ( e ) {
+			e.preventDefault();
+			closeBatchPanels();
+		} );
+		$( document ).on( 'click', '.uappt-batch-apply', function ( e ) {
+			e.preventDefault();
+			applyBatch( $( this ).closest( '.uappt-batch-panel' ).data( 'panel' ) );
+		} );
+		$( document ).on( 'click', '.uappt-batch-inactive', function ( e ) {
+			e.preventDefault();
+			applyBatchInactive( '1' === String( $( this ).data( 'value' ) ) );
+		} );
+		$( document ).on( 'click', '.uappt-batch-delete', function ( e ) {
+			e.preventDefault();
+			deletePicked();
+		} );
+
+		$( document ).on( 'click', '.uappt-plans-toggle-all', function ( e ) {
+			e.preventDefault();
+			var collapse = !! $( this ).data( 'collapse' );
+			$rows()
+				.find( '.uappt-plan-row' )
+				.each( function () {
+					setCollapsed( $( this ), collapse );
+				} );
 		} );
 
 		$( document ).on( 'click', '.uappt-toggle-advanced', function ( e ) {
@@ -355,11 +753,12 @@
 			} );
 		}
 
-		syncEmptyNotice();
 		$rows()
 			.find( '.uappt-plan-row' )
 			.each( function () {
 				refreshAdvancedDot( $( this ) );
+				setCollapsed( $( this ), true ); // 既有方案預設收合，新增的方案（範本）是展開的。
 			} );
+		syncEmptyNotice();
 	} );
 } )( jQuery );

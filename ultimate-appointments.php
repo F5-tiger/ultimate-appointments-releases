@@ -3,7 +3,7 @@
  * Plugin Name: Ultimate Appointments
  * Plugin URI:  https://nibill-studio.com/
  * Description: 新增「預約商品」商品類型，讓服務業以類似飯店控房的方式管理預約：一個商品可設定多個「服務方案」（名稱／時長／價格），客人選方案、選服務人員、選時段後才能加入購物車。僅在「加入購物車」與訂單狀態變化這幾個標準 WooCommerce 事件上串接，不影響既有結帳流程與電商模組。
- * Version:     3.2.1
+ * Version:     3.3.0
  * Author:      快捷鍵Ctrl+A
  * Author URI:  https://nibill-studio.com/
  * Text Domain: ultimate-appointments
@@ -31,7 +31,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit; // 阻擋直接存取。
 }
 
-define( 'UAPPT_VERSION', '3.2.1' );
+define( 'UAPPT_VERSION', '3.3.0' );
 // UAPPT_VERSION 與 UAPPT_DB_VERSION 刻意分開：前者每次發版都推進（也是靜態資源
 // 的快取破除鍵），後者只有真的動到資料表結構時才推。v2.18.0（批次匯入、個別
 // 撤回）沿用既有的寫入方法、v2.19.0／v2.19.1／v2.19.2（後台視覺系統、對齊修正、手機版響應式）只動
@@ -100,6 +100,18 @@ function uappt_local_weekday_w( $date_ymd ) {
 /**
  * 載入所有類別檔案。
  */
+/**
+ * 載入日期選擇器：flatpickr（跟終極電商同一版 4.6.13，自帶一份，不依賴終極電商有沒有裝）
+ * ＋本外掛的初始化（中文、`min`／`max`、清除鈕）。後台每一頁與前台預約商品頁共用。
+ *
+ * 要用到 `UAPPT_Datepicker` 的腳本把 `uappt-datepicker` 列進相依，才保證它先載入。
+ */
+function uappt_enqueue_datepicker() {
+	wp_enqueue_style( 'uappt-flatpickr', UAPPT_PLUGIN_URL . 'assets/vendor/flatpickr/flatpickr.min.css', array(), '4.6.13' );
+	wp_enqueue_script( 'uappt-flatpickr', UAPPT_PLUGIN_URL . 'assets/vendor/flatpickr/flatpickr.min.js', array(), '4.6.13', true );
+	wp_enqueue_script( 'uappt-datepicker', UAPPT_PLUGIN_URL . 'assets/js/datepicker.js', array( 'uappt-flatpickr' ), UAPPT_VERSION, true );
+}
+
 function uappt_load_includes() {
 	$includes = array(
 		'includes/class-uappt-install.php',

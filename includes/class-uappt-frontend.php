@@ -154,16 +154,22 @@ class UAPPT_Frontend {
 		}
 
 		wp_enqueue_style( 'uappt-frontend', UAPPT_PLUGIN_URL . 'assets/css/frontend.css', array(), UAPPT_VERSION );
-		wp_enqueue_script( 'uappt-frontend', UAPPT_PLUGIN_URL . 'assets/js/frontend.js', array( 'jquery' ), UAPPT_VERSION, true );
+		// 日期欄位換成 flatpickr（v3.3.0），frontend.js 要用 UAPPT_Datepicker，列進相依。
+		uappt_enqueue_datepicker();
+		wp_enqueue_script( 'uappt-frontend', UAPPT_PLUGIN_URL . 'assets/js/frontend.js', array( 'jquery', 'uappt-datepicker' ), UAPPT_VERSION, true );
 
 		wp_localize_script(
 			'uappt-frontend',
 			'UAPPT_Frontend',
 			array(
 				'ajax_url'     => admin_url( 'admin-ajax.php' ),
+				// 日期月曆灰掉沒空的日子（v3.3.0）：跟前台預約精靈的日期列同一支端點。
+				'days_url'     => esc_url_raw( rest_url( UAPPT_Rest::NAMESPACE_V1 . '/days' ) ),
 				'nonce'        => wp_create_nonce( 'uappt_slots_nonce' ),
 				'i18n'         => array(
 					'select_date'          => __( '請先選擇日期', 'ultimate-appointments' ),
+					'day_full'             => __( '這天已經約滿了', 'ultimate-appointments' ),
+					'day_closed'           => __( '這天不開放預約', 'ultimate-appointments' ),
 					'loading'              => __( '查詢可預約時段中…', 'ultimate-appointments' ),
 					'no_slots'             => __( '這天已經沒有可預約的時段了，請換一天試試。', 'ultimate-appointments' ),
 					'error'                => __( '查詢時段失敗，請稍後再試。', 'ultimate-appointments' ),

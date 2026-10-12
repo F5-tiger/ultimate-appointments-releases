@@ -927,3 +927,11 @@ a.uappt-cal-day:focus-visible {
 		height: 1.5em;
 	}
 }
+
+/* 日期欄位換成 flatpickr 之後是唯讀的（v3.3.0，見 assets/js/datepicker.js）：
+   佈景常把唯讀欄位畫成灰底或「禁止」游標，看起來像不能點。 */
+.uappt-booking-widget input.uappt-date[readonly] {
+	cursor: pointer;
+	opacity: 1;
+}
+

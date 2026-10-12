@@ -133,6 +133,41 @@ class UAPPT_Product {
 				'name_required'       => __( '這個方案還沒填名稱。沒有名稱的方案不會被儲存，請補上或直接刪除這一列。', 'ultimate-appointments' ),
 				'inherit_prefix'      => __( '沿用', 'ultimate-appointments' ),
 				'staff_required'      => __( '請至少選擇一位可服務的人員，否則這項服務在前台完全無法預約。', 'ultimate-appointments' ),
+				// 方案卡片收合（v3.3.0）。
+				'expand'              => __( '展開', 'ultimate-appointments' ),
+				'collapse'            => __( '收合', 'ultimate-appointments' ),
+				'expand_all'          => __( '全部展開', 'ultimate-appointments' ),
+				'collapse_all'        => __( '全部收合', 'ultimate-appointments' ),
+				/* translators: %d: 方案數 */
+				'plans_count'         => __( '共 %d 個方案', 'ultimate-appointments' ),
+				/* translators: %d: 暫停銷售的方案數 */
+				'plans_inactive'      => __( '（%d 個暫停銷售）', 'ultimate-appointments' ),
+				'untitled'            => __( '（還沒取名的方案）', 'ultimate-appointments' ),
+				/* translators: %s: 分鐘數 */
+				'chip_minutes'        => __( '%s 分', 'ultimate-appointments' ),
+				'chip_inherited'      => __( '沿用預設', 'ultimate-appointments' ),
+				'chip_price_inherit'  => __( '沿用商品售價', 'ultimate-appointments' ),
+				'chip_staff_inherit'  => __( '沿用預設人員', 'ultimate-appointments' ),
+				/* translators: %d: 人數 */
+				'chip_staff_count'    => __( '%d 位人員', 'ultimate-appointments' ),
+				'chip_inactive'       => __( '暫停銷售', 'ultimate-appointments' ),
+				'currency'            => html_entity_decode( get_woocommerce_currency_symbol(), ENT_QUOTES, 'UTF-8' ),
+				// 批次編輯（v3.3.0）。
+				'price_decimals'      => wc_get_price_decimals(),
+				'decimal_sep'         => wc_get_price_decimal_separator(),
+				/* translators: %d: 勾選的方案數 */
+				'batch_selected'      => __( '已選 %d 個', 'ultimate-appointments' ),
+				'chip_modified'       => __( '已修改', 'ultimate-appointments' ),
+				/* translators: %d: 套用的方案數 */
+				'batch_applied'       => __( '已套用到 %d 個方案。按右邊的「更新」才會儲存。', 'ultimate-appointments' ),
+				/* translators: %d: 沒有調整的方案數 */
+				'batch_price_skipped' => __( '其中 %d 個沿用商品售價、沒有自己的價格，沒有跟著加減。', 'ultimate-appointments' ),
+				'batch_need_staff'    => __( '請先選擇人員。', 'ultimate-appointments' ),
+				'batch_need_number'   => __( '請填一個數字。', 'ultimate-appointments' ),
+				/* translators: %d: 要刪除的方案數 */
+				'batch_confirm_delete' => __( '確定要刪除勾選的 %d 個方案嗎？已經用這些方案建立的預約不會被刪除，但之後就無法用它們改期了。只是暫時不賣的話，請改用「暫停銷售」。', 'ultimate-appointments' ),
+				/* translators: %d: 刪除的方案數 */
+				'batch_deleted'       => __( '已刪除 %d 個方案。按右邊的「更新」才會儲存。', 'ultimate-appointments' ),
 				// 送出前的驗證只能對「預約商品」生效，JS 要拿這個值跟 #product-type
 				// 比對。寫死在 JS 裡的話，兩邊遲早會對不上。
 				'product_type'        => UAPPT_Product_Type::PRODUCT_TYPE,
@@ -219,6 +254,17 @@ class UAPPT_Product {
 		// 捲軸後面（「可服務人員」欄要捲才看得到），而「進階」展開層被塞進最窄的
 		// 名稱欄裡只剩 185px。卡片式讓每個欄位都拿得到整個 metabox 的寬度，窄
 		// 版面下也不需要任何捲動——跟 WooCommerce 自己的「變化款」介面同一個做法。
+		// 工具列（v3.3.0）：方案數、全部展開／收合。數字與按鈕文字由 JS 填。
+		echo '<div class="uappt-plans-toolbar"' . ( $plans ? '' : ' hidden' ) . '>';
+		echo '<span class="uappt-plans-count"></span>';
+		echo '<span class="uappt-plans-toolbar-actions">';
+		echo '<button type="button" class="button-link uappt-plans-toggle-all"></button>';
+		echo '<button type="button" class="button-link uappt-plans-batch-toggle">' . esc_html__( '批次編輯', 'ultimate-appointments' ) . '</button>';
+		echo '</span>';
+		echo '</div>';
+
+		self::render_batch_panel();
+
 		echo '<div class="uappt-plans-rows">';
 
 		foreach ( $plans as $index => $plan ) {
@@ -660,6 +706,89 @@ class UAPPT_Product {
 	}
 
 	/**
+	 * 批次編輯的動作列與三個設定面板（v3.3.0）。
+	 *
+	 * 平常是藏著的，按工具列的「批次編輯」才出現。**這裡的欄位刻意都沒有 name**：它們只是
+	 * 拿來決定「要把勾選的方案改成什麼」，套用時由 admin-product.js 改的是各張卡片自己的欄位，
+	 * 按商品的「更新」才跟著表單一起存——不另外開一條寫入路徑（設計紀律 #8）。
+	 *
+	 * 單選鈕例外：一組單選鈕一定要有 name 才會互斥。所以它們掛 `form="uappt-batch-no-submit"`
+	 * （一個不存在的表單），等於脫離商品的表單，不會被送出。
+	 */
+	protected static function render_batch_panel() {
+		echo '<div class="uappt-plans-batch" hidden>';
+
+		echo '<div class="uappt-plans-batch-bar">';
+		echo '<label class="uappt-batch-all-label"><input type="checkbox" class="uappt-batch-all" /> <span class="uappt-batch-count"></span></label>';
+		echo '<span class="uappt-batch-actions">';
+		echo '<button type="button" class="button uappt-batch-open" data-panel="staff" disabled>' . esc_html__( '設定可服務人員…', 'ultimate-appointments' ) . '</button>';
+		echo '<button type="button" class="button uappt-batch-open" data-panel="price" disabled>' . esc_html__( '調整售價…', 'ultimate-appointments' ) . '</button>';
+		echo '<button type="button" class="button uappt-batch-open" data-panel="duration" disabled>' . esc_html__( '設定時長…', 'ultimate-appointments' ) . '</button>';
+		echo '<button type="button" class="button uappt-batch-inactive" data-value="1" disabled>' . esc_html__( '暫停銷售', 'ultimate-appointments' ) . '</button>';
+		echo '<button type="button" class="button uappt-batch-inactive" data-value="0" disabled>' . esc_html__( '恢復銷售', 'ultimate-appointments' ) . '</button>';
+		echo '<button type="button" class="button uappt-batch-delete" disabled>' . esc_html__( '刪除', 'ultimate-appointments' ) . '</button>';
+		echo '</span>';
+		echo '<button type="button" class="button button-primary uappt-batch-done">' . esc_html__( '完成', 'ultimate-appointments' ) . '</button>';
+		echo '</div>';
+
+		// --- 可服務人員 ---
+		echo '<div class="uappt-batch-panel" data-panel="staff" hidden>';
+		echo '<p class="uappt-batch-modes">';
+		foreach ( array(
+			'add'     => __( '加入這些人', 'ultimate-appointments' ),
+			'remove'  => __( '移除這些人', 'ultimate-appointments' ),
+			'replace' => __( '換成只有這些人', 'ultimate-appointments' ),
+			'inherit' => __( '改回沿用預設人員', 'ultimate-appointments' ),
+		) as $mode => $label ) {
+			echo '<label><input type="radio" name="uappt_batch_staff_mode_ui" value="' . esc_attr( $mode ) . '"' . checked( 'add', $mode, false ) . ' form="uappt-batch-no-submit" /> ' . esc_html( $label ) . '</label>';
+		}
+		echo '</p>';
+		echo '<select class="wc-enhanced-select uappt-batch-staff" multiple="multiple" data-placeholder="' . esc_attr__( '選擇人員', 'ultimate-appointments' ) . '" style="width:100%;">';
+		foreach ( self::get_staff_options() as $staff_id => $staff_name ) {
+			echo '<option value="' . esc_attr( $staff_id ) . '">' . esc_html( $staff_name ) . '</option>';
+		}
+		echo '</select>';
+		self::render_batch_panel_buttons();
+		echo '</div>';
+
+		// --- 售價 ---
+		echo '<div class="uappt-batch-panel" data-panel="price" hidden>';
+		echo '<p class="uappt-batch-modes">';
+		foreach ( array(
+			'set'     => __( '全部設成', 'ultimate-appointments' ),
+			'amount'  => __( '每個加減（元）', 'ultimate-appointments' ),
+			'percent' => __( '每個加減（%）', 'ultimate-appointments' ),
+		) as $mode => $label ) {
+			echo '<label><input type="radio" name="uappt_batch_price_mode_ui" value="' . esc_attr( $mode ) . '"' . checked( 'set', $mode, false ) . ' form="uappt-batch-no-submit" /> ' . esc_html( $label ) . '</label>';
+		}
+		echo '</p>';
+		echo '<input type="number" step="any" class="uappt-batch-price" />';
+		echo '<p class="description">' . esc_html__( '加減用負數就是降價，例如 -100 或 -10。沿用商品售價的方案沒有自己的價格，只會跟著「全部設成」改。', 'ultimate-appointments' ) . '</p>';
+		self::render_batch_panel_buttons();
+		echo '</div>';
+
+		// --- 時長 ---
+		echo '<div class="uappt-batch-panel" data-panel="duration" hidden>';
+		echo '<p><label>' . esc_html__( '時長（分鐘）', 'ultimate-appointments' ) . ' <input type="number" min="5" step="5" class="uappt-batch-duration" /></label></p>';
+		echo '<p class="description">' . esc_html__( '留空就是改回沿用下方的預設服務時長。', 'ultimate-appointments' ) . '</p>';
+		self::render_batch_panel_buttons();
+		echo '</div>';
+
+		echo '<p class="uappt-batch-result" hidden></p>';
+		echo '</div>';
+	}
+
+	/**
+	 * 批次設定面板底部的「套用」「取消」。
+	 */
+	protected static function render_batch_panel_buttons() {
+		echo '<p class="uappt-batch-panel-actions">';
+		echo '<button type="button" class="button button-primary uappt-batch-apply">' . esc_html__( '套用到勾選的方案', 'ultimate-appointments' ) . '</button> ';
+		echo '<button type="button" class="button uappt-batch-cancel">' . esc_html__( '取消', 'ultimate-appointments' ) . '</button>';
+		echo '</p>';
+	}
+
+	/**
 	 * 輸出單一方案列的 HTML。
 	 *
 	 * 版面決策：前／後緩衝與「暫停銷售」收在名稱欄底下的「進階」展開層裡，而不是
@@ -719,14 +848,23 @@ class UAPPT_Product {
 		// --- 卡片頂：方案名稱 ＋ 進階／刪除 ---
 		$html .= '<div class="uappt-plan-head">';
 		$html .= '<input type="hidden" name="' . esc_attr( $base ) . '[key]" value="' . esc_attr( $plan['key'] ) . '" />';
+		// 收合時只剩這一行（v3.3.0）：名稱改成純文字、後面接摘要標籤（時長、售價、人員、暫停）。
+		// 兩者的內容都由 assets/js/admin-product.js 從下面的欄位算出來，不在這裡印——欄位一改，
+		// 收起來看到的就要是新的值，兩份來源遲早對不上。
+		$html .= '<span class="uappt-plan-title"></span>';
+		$html .= '<span class="uappt-plan-chips"></span>';
 		$html .= '<input type="text" class="uappt-plan-name" name="' . esc_attr( $base ) . '[name]" value="' . esc_attr( $plan['name'] ) . '" placeholder="' . esc_attr__( '方案名稱，例如：90 分鐘全身舒壓', 'ultimate-appointments' ) . '" />';
 		$html .= '<span class="uappt-badge uappt-badge-muted uappt-plan-inactive-badge"' . ( $inactive ? '' : ' style="display:none;"' ) . '>' . esc_html__( '已停用', 'ultimate-appointments' ) . '</span>';
 		$html .= '<button type="button" class="button-link uappt-toggle-advanced' . ( $has_advanced ? ' has-values' : '' ) . '" aria-expanded="' . ( $has_advanced ? 'true' : 'false' ) . '">';
 		$html .= '<span class="dashicons dashicons-admin-generic"></span>';
 		$html .= '<span class="uappt-toggle-advanced-text">' . esc_html__( '進階', 'ultimate-appointments' ) . '</span>';
 		$html .= '</button>';
+		$html .= '<button type="button" class="button-link uappt-plan-collapse" aria-expanded="true" title="' . esc_attr__( '收合', 'ultimate-appointments' ) . '" aria-label="' . esc_attr__( '收合', 'ultimate-appointments' ) . '"><span class="dashicons dashicons-arrow-up-alt2"></span></button>';
 		$html .= '<button type="button" class="button-link uappt-remove-plan" title="' . esc_attr__( '刪除方案', 'ultimate-appointments' ) . '" aria-label="' . esc_attr__( '刪除方案', 'ultimate-appointments' ) . '">&times;</button>';
 		$html .= '</div>';
+
+		// 收合時整塊藏起來的部分：時長、售價、可服務人員、進階。
+		$html .= '<div class="uappt-plan-details">';
 
 		// --- 主要欄位：時長／售價，兩個短數字欄位並排 ---
 		// 可服務人員拆到自己獨立一行（見下方），不再跟這兩個擠在同一個
@@ -785,6 +923,8 @@ class UAPPT_Product {
 		$html .= '</label>';
 		$html .= '<p class="description">' . esc_html__( '前台不再顯示這個方案，也不列入商品價格區間；已經用它建立的預約仍然可以改期。想永久移除請用卡片右上角的 ×。', 'ultimate-appointments' ) . '</p>';
 		$html .= '</div>';
+
+		$html .= '</div>'; // .uappt-plan-details
 
 		$html .= '</div>'; // .uappt-plan-body
 

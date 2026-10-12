@@ -444,9 +444,9 @@ $uappt_new_url  = add_query_arg( 'action', 'new', $uappt_base_url );
 
 			<?php UAPPT_Admin::field_open( __( '異動日期', 'ultimate-appointments' ), '', 'uappt-field-range' ); ?>
 				<span class="uappt-field-row">
-					<input type="date" name="date_from" value="<?php echo esc_attr( $move_filters['date_from'] ); ?>" aria-label="<?php esc_attr_e( '異動日期（起）', 'ultimate-appointments' ); ?>" />
+					<input type="date" data-uappt-clearable name="date_from" value="<?php echo esc_attr( $move_filters['date_from'] ); ?>" aria-label="<?php esc_attr_e( '異動日期（起）', 'ultimate-appointments' ); ?>" />
 					<span class="uappt-field-sep" aria-hidden="true">～</span>
-					<input type="date" name="date_to" value="<?php echo esc_attr( $move_filters['date_to'] ); ?>" aria-label="<?php esc_attr_e( '異動日期（迄）', 'ultimate-appointments' ); ?>" />
+					<input type="date" data-uappt-clearable name="date_to" value="<?php echo esc_attr( $move_filters['date_to'] ); ?>" aria-label="<?php esc_attr_e( '異動日期（迄）', 'ultimate-appointments' ); ?>" />
 				</span>
 			<?php UAPPT_Admin::field_close(); ?>
 

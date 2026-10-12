@@ -261,10 +261,10 @@ if ( ! function_exists( 'uappt_payment_rate_value' ) ) {
 								<?php foreach ( $uappt_rows as $uappt_i => $uappt_row ) : ?>
 									<tr>
 										<td data-label="<?php esc_attr_e( '起', 'ultimate-appointments' ); ?>">
-											<input type="date" name="shop_closure_dates[<?php echo (int) $uappt_i; ?>][from]" value="<?php echo esc_attr( $uappt_row['from'] ); ?>" />
+											<input type="date" data-uappt-clearable name="shop_closure_dates[<?php echo (int) $uappt_i; ?>][from]" value="<?php echo esc_attr( $uappt_row['from'] ); ?>" />
 										</td>
 										<td data-label="<?php esc_attr_e( '迄', 'ultimate-appointments' ); ?>">
-											<input type="date" name="shop_closure_dates[<?php echo (int) $uappt_i; ?>][to]" value="<?php echo esc_attr( $uappt_row['to'] ); ?>" />
+											<input type="date" data-uappt-clearable name="shop_closure_dates[<?php echo (int) $uappt_i; ?>][to]" value="<?php echo esc_attr( $uappt_row['to'] ); ?>" />
 										</td>
 										<td data-label="<?php esc_attr_e( '備註', 'ultimate-appointments' ); ?>">
 											<input type="text" class="regular-text" name="shop_closure_dates[<?php echo (int) $uappt_i; ?>][note]" value="<?php echo esc_attr( $uappt_row['note'] ); ?>" placeholder="<?php esc_attr_e( '例如：春節 / 員工旅遊', 'ultimate-appointments' ); ?>" />

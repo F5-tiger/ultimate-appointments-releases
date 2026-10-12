@@ -2275,6 +2275,263 @@ a.uappt-month-item.uappt-tone-error {
 	margin-left: var(--uappt-space-1);
 }
 
+/* --- 服務方案收合（v3.3.0）---
+ *
+ * 收合時一個方案只剩一行：把手｜名稱｜摘要標籤｜展開｜刪除。名稱與標籤的內容由
+ * admin-product.js 從欄位算出來；展開時這兩個藏起來，名稱改回輸入框。
+ * 收合狀態由 JS 載入後才套上（理由見 admin-product.js），這裡只管長相。 */
+.uappt-plans-toolbar {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--uappt-space-3);
+	margin: 0 var(--uappt-space-3) var(--uappt-space-2);
+	color: var(--uappt-color-text-muted);
+}
+
+/* 自己寫了 display:flex，要明講 hidden 時藏起來（這頁不在 .uappt-wrap 底下，吃不到
+   那條全域的 [hidden] 規則）。 */
+.uappt-plans-toolbar[hidden] {
+	display: none;
+}
+
+.uappt-plans-toolbar .button-link {
+	text-decoration: none;
+}
+
+.uappt-plan-title,
+.uappt-plan-chips {
+	display: none;
+}
+
+/* 兩個 class：WordPress 的 `.wp-core-ui .button-link` 有底線，(0,2,0)，一個 class 壓不過。 */
+.uappt-plans-group .uappt-plan-collapse {
+	flex: 0 0 auto;
+	color: var(--uappt-color-text-muted);
+	text-decoration: none;
+}
+
+.uappt-plan-collapse .dashicons {
+	width: 18px;
+	height: 18px;
+	font-size: 18px;
+}
+
+.uappt-plan-row.is-collapsed {
+	align-items: center;
+	margin-bottom: var(--uappt-space-2);
+	padding: var(--uappt-space-2) var(--uappt-space-3);
+}
+
+.uappt-plan-row.is-collapsed .uappt-plan-handle {
+	padding-top: 0;
+}
+
+.uappt-plan-row.is-collapsed .uappt-plan-head {
+	cursor: pointer;
+}
+
+.uappt-plan-row.is-collapsed .uappt-plan-name,
+.uappt-plan-row.is-collapsed .uappt-toggle-advanced,
+.uappt-plan-row.is-collapsed .uappt-plan-details {
+	display: none;
+}
+
+/* ⚠️ 要 !important：「已停用」徽章是 jQuery .toggle() 寫的 inline style，普通規則壓不過。
+   收合時那一行的摘要已經有「暫停銷售」標籤，徽章重複了。 */
+.uappt-plan-row.is-collapsed .uappt-plan-inactive-badge {
+	display: none !important;
+}
+
+.uappt-plan-row.is-collapsed .uappt-plan-title {
+	display: block;
+	flex: 0 1 auto;
+	max-width: 45%;
+	min-width: 0;
+	overflow: hidden;
+	font-weight: 600;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.uappt-plan-title.is-empty {
+	color: var(--uappt-color-text-faint);
+	font-weight: normal;
+}
+
+.uappt-plan-row.is-collapsed .uappt-plan-chips {
+	display: flex;
+	flex: 1 1 auto;
+	flex-wrap: wrap;
+	gap: 4px;
+	min-width: 0;
+}
+
+.uappt-plan-chip {
+	padding: 0 8px;
+	border-radius: 999px;
+	background: var(--uappt-color-muted-bg);
+	color: var(--uappt-color-muted-ink);
+	font-size: 12px;
+	line-height: 20px;
+	white-space: nowrap;
+}
+
+/* 留空、沿用商品層級的那幾項：淡色外框，跟自己填的分得出來。 */
+.uappt-plan-chip.is-inherited {
+	background: transparent;
+	box-shadow: inset 0 0 0 1px var(--uappt-color-border);
+	color: var(--uappt-color-text-faint);
+}
+
+.uappt-plan-chip.is-inactive {
+	background: var(--uappt-color-danger-bg);
+	color: var(--uappt-color-danger-ink);
+}
+
+.uappt-plans-toolbar-actions {
+	display: flex;
+	gap: var(--uappt-space-3);
+}
+
+.uappt-plan-chip.is-modified {
+	background: var(--uappt-color-amber-bg);
+	color: var(--uappt-color-amber-ink);
+}
+
+/* --- 批次編輯（v3.3.0）---
+ *
+ * 批次模式（.uappt-plans-group.is-batch）：每列前面一個勾選框、整行點了就是勾選；
+ * 拖曳把手、展開鈕、單張刪除、新增方案、工具列的兩顆按鈕都先收起來，免得跟勾選打架。 */
+.uappt-plans-group.is-batch .uappt-plan-handle,
+.uappt-plans-group.is-batch .uappt-plan-collapse,
+.uappt-plans-group.is-batch .uappt-remove-plan,
+.uappt-plans-group.is-batch .uappt-plans-toolbar-actions,
+.uappt-plans-group.is-batch .uappt-add-plan {
+	display: none;
+}
+
+.uappt-plans-group .uappt-plan-pick {
+	flex: 0 0 auto;
+	margin: 0;
+}
+
+.uappt-plan-row.is-picked {
+	border-color: var(--uappt-color-primary);
+	background: var(--uappt-color-primary-bg);
+}
+
+.uappt-plans-batch {
+	margin: 0 var(--uappt-space-3) var(--uappt-space-2);
+	padding: var(--uappt-space-2) var(--uappt-space-3);
+	border: 1px solid var(--uappt-color-border-strong);
+	border-radius: var(--uappt-radius-md);
+	background: var(--uappt-surface-subtle);
+}
+
+.uappt-plans-batch[hidden] {
+	display: none;
+}
+
+/* 固定兩列：第一列「已選 N 個」＋右邊的「完成」，第二列是所有動作。讓它們自己換行的話，
+   實測桌機會變成「刪除」掉到第二行、「完成」孤零零一個在第三行。 */
+.uappt-plans-batch-bar {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: var(--uappt-space-2);
+}
+
+.uappt-plans-batch .uappt-batch-done {
+	order: 1;
+	margin-left: auto;
+}
+
+.uappt-batch-actions {
+	display: flex;
+	flex-wrap: wrap;
+	flex-basis: 100%;
+	order: 2;
+	gap: 6px;
+}
+
+.uappt-plans-batch .uappt-batch-delete:not(:disabled) {
+	border-color: var(--uappt-color-danger);
+	color: var(--uappt-color-danger-ink);
+}
+
+/* 目前打開的那一個設定面板，按鈕維持按下去的樣子。 */
+.uappt-plans-batch .uappt-batch-open.is-active {
+	border-color: var(--uappt-color-primary);
+	background: var(--uappt-color-primary-bg);
+	color: var(--uappt-color-primary-ink);
+}
+
+.uappt-batch-panel {
+	margin-top: var(--uappt-space-2);
+	padding-top: var(--uappt-space-2);
+	border-top: 1px solid var(--uappt-color-border);
+}
+
+.uappt-batch-panel[hidden],
+.uappt-batch-result[hidden] {
+	display: none;
+}
+
+/* ⚠️ 面板在 WooCommerce 的 `.woocommerce_options_panel` 裡：那邊的 label 是「浮在左邊 150px」、
+   數字欄位是「寬 50% 往左浮」，跟方案卡片踩過的是同一個坑（見 `.uappt-plans-group
+   .uappt-plan-row label` 的說明），這裡一樣要整組退掉。兩個 class 才壓得過 WooCommerce 的
+   (0,2,0)。 */
+.uappt-plans-group .uappt-plans-batch label {
+	float: none;
+	width: auto;
+	margin: 0 var(--uappt-space-3) 0 0;
+}
+
+.uappt-plans-group .uappt-plans-batch input[type="number"] {
+	float: none;
+	width: 10em;
+}
+
+.uappt-plans-group .uappt-plans-batch p {
+	margin: 0 0 var(--uappt-space-2);
+	padding: 0;
+}
+
+.uappt-plans-group .uappt-plans-batch .description {
+	display: block;
+	margin: var(--uappt-space-1) 0 var(--uappt-space-2);
+}
+
+.uappt-plans-group .uappt-batch-all-label {
+	font-weight: 600;
+}
+
+.uappt-batch-result {
+	margin: var(--uappt-space-2) 0 0;
+	color: var(--uappt-color-success-ink);
+}
+
+/* 窄螢幕（WordPress 後台收成漢堡選單的 782px）放不下「名稱＋三個標籤」一行：實測 375px
+   時名稱被擠成「基礎…」三個字，而名稱是這一行最重要的資訊。名稱留在第一行（跟展開、
+   刪除鈕同一行），標籤換到第二行。桌機的商品資料欄（約 585px）一行放得下，維持一行。 */
+@media screen and (max-width: 782px) {
+	.uappt-plan-row.is-collapsed .uappt-plan-head {
+		flex-wrap: wrap;
+		row-gap: 6px;
+	}
+
+	.uappt-plan-row.is-collapsed .uappt-plan-title {
+		flex: 1 1 auto;
+		max-width: none;
+	}
+
+	.uappt-plan-row.is-collapsed .uappt-plan-chips {
+		order: 10;
+		flex-basis: 100%;
+	}
+}
+
 .uappt-focus-field {
 	text-decoration: underline;
 }
@@ -3981,7 +4238,8 @@ a.uappt-dash-card:hover {
 	.uappt-wrap .uappt-filters .uappt-field > input[type="date"],
 	.uappt-wrap .uappt-filters .uappt-field > input[type="search"],
 	.uappt-wrap .uappt-filters .uappt-field > input[type="text"],
-	.uappt-wrap .uappt-filters .uappt-field-row > input[type="date"] {
+	.uappt-wrap .uappt-filters .uappt-field-row > input[type="date"],
+	.uappt-wrap .uappt-filters .uappt-field-row > input.uappt-date {
 		width: 100%;
 		min-width: 0;
 	}
@@ -3999,7 +4257,8 @@ a.uappt-dash-card:hover {
 	}
 
 	/* 起訖兩格等寬——這是「對齊」最看得出來的一處，也是原本最亂的一處。 */
-	.uappt-wrap .uappt-filters .uappt-field-row > input[type="date"] {
+	.uappt-wrap .uappt-filters .uappt-field-row > input[type="date"],
+	.uappt-wrap .uappt-filters .uappt-field-row > input.uappt-date {
 		flex: 1 1 0;
 	}
 
@@ -5980,3 +6239,48 @@ a.uappt-dash-card:hover {
 		min-width: 50px;
 	}
 }
+
+/* --- 日期選擇器（v3.3.0）---
+ *
+ * flatpickr 本身的樣子不覆寫，保持跟終極電商同一個樣子（見 assets/js/datepicker.js）。
+ * 這裡只補本外掛的版面需要：
+ *
+ * 1. flatpickr 把輸入框設成唯讀（不然手機點下去會跳鍵盤），而 WordPress 後台的唯讀欄位
+ *    是灰底——看起來像不能用。這些欄位是點了會開月曆的，維持白底、游標換成手指。
+ *    （終極電商的日期欄位就是灰的，那是它沒處理這一點，不是刻意的樣式。）
+ * 2. 選填欄位的「×」：datepicker.js 把它放成 input 的下一個兄弟節點（不另外包一層，
+ *    理由見那邊的說明），用負的左邊界疊進輸入框右側，輸入框自己留出右內距。
+ */
+.uappt-wrap input.uappt-date[readonly] {
+	background-color: #fff;
+	cursor: pointer;
+}
+
+.uappt-wrap input.uappt-date.has-clear {
+	padding-right: 26px;
+}
+
+.uappt-wrap .uappt-date-clear {
+	position: relative;
+	flex: 0 0 auto;
+	width: 22px;
+	height: 22px;
+	margin: 0 0 0 -26px;
+	padding: 0;
+	border: 0;
+	border-radius: 50%;
+	background: transparent;
+	color: var(--uappt-color-text-muted);
+	font-size: 16px;
+	line-height: 22px;
+	text-align: center;
+	vertical-align: middle;
+	cursor: pointer;
+}
+
+.uappt-wrap .uappt-date-clear:hover,
+.uappt-wrap .uappt-date-clear:focus-visible {
+	background: var(--uappt-color-muted-bg);
+	color: var(--uappt-color-danger-ink);
+}
+

@@ -200,9 +200,9 @@ if ( '' !== $user_date_to ) {
 		UAPPT_Admin::field_open( __( '服務日期', 'ultimate-appointments' ), '', 'uappt-field-range' );
 		?>
 			<span class="uappt-field-row">
-				<input type="date" name="date_from" value="<?php echo esc_attr( $filters['date_from'] ); ?>" aria-label="<?php esc_attr_e( '服務日期（起）', 'ultimate-appointments' ); ?>" />
+				<input type="date" data-uappt-clearable name="date_from" value="<?php echo esc_attr( $filters['date_from'] ); ?>" aria-label="<?php esc_attr_e( '服務日期（起）', 'ultimate-appointments' ); ?>" />
 				<span class="uappt-field-sep" aria-hidden="true">～</span>
-				<input type="date" name="date_to" value="<?php echo esc_attr( $filters['date_to'] ); ?>" aria-label="<?php esc_attr_e( '服務日期（迄）', 'ultimate-appointments' ); ?>" />
+				<input type="date" data-uappt-clearable name="date_to" value="<?php echo esc_attr( $filters['date_to'] ); ?>" aria-label="<?php esc_attr_e( '服務日期（迄）', 'ultimate-appointments' ); ?>" />
 			</span>
 		<?php UAPPT_Admin::field_close(); ?>
 

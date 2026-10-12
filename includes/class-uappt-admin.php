@@ -786,8 +786,13 @@ class UAPPT_Admin {
 		// 自己在哪」。不吃 jQuery，也不需要任何 localize。
 		wp_enqueue_script( 'uappt-admin-nav', UAPPT_PLUGIN_URL . 'assets/js/admin-nav.js', array(), UAPPT_VERSION, true );
 
+		// 日期選擇器（v3.3.0）。**每一頁都載**：日期欄位散在預約、人員、設定、耗材、報表、
+		// 手動建單六個區塊，逐頁判斷省下的幾十 KB 不值得漏載一頁的風險（漏了不會報錯，
+		// 只會那一頁悄悄變回原生欄位）。
+		uappt_enqueue_datepicker();
+
 		if ( 'staff' === $page ) {
-			wp_enqueue_script( 'uappt-admin-staff', UAPPT_PLUGIN_URL . 'assets/js/admin-staff.js', array( 'jquery' ), UAPPT_VERSION, true );
+			wp_enqueue_script( 'uappt-admin-staff', UAPPT_PLUGIN_URL . 'assets/js/admin-staff.js', array( 'jquery', 'uappt-datepicker' ), UAPPT_VERSION, true );
 
 			// 班別列的「自訂時段…」（v2.100.0）。人員編輯頁與月排班表都有那一列，小檔案，
 			// 整個人員區塊一起載入。
