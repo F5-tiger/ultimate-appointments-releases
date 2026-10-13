@@ -242,7 +242,57 @@ class UAPPT_Rest {
 			}
 		}
 
-		return rest_ensure_response( array( 'services' => $services ) );
+		return rest_ensure_response( array( 'services' => self::sort_services( $services ) ) );
+	}
+
+	/**
+	 * 服務排成「商品照 WooCommerce 商品排序、方案照商品裡設定的順序」。
+	 *
+	 * 反查索引的順序是「人員一個一個攤平」：不帶 staff_id 時，同一個商品的方案
+	 * 會被不同人員拆開，順序也跟後台設定的不一樣。精靈（v3.4.0 起）是先列商品
+	 * 再列方案，在這裡排好，前端照順序分組就好，不用自己再排一次。
+	 *
+	 * 商品排序跟 WooCommerce 預設的「menu_order title」一致——店家在後台
+	 * 「商品 ▸ 排序」拖好的順序，在精靈裡也一樣。
+	 *
+	 * @param array $services service_payload() 的陣列。
+	 * @return array
+	 */
+	public static function sort_services( array $services ) {
+		$rows = array();
+
+		foreach ( $services as $i => $service ) {
+			$product_id = (int) $service['product_id'];
+			$position   = 0;
+
+			foreach ( array_values( UAPPT_Product::get_plans( $product_id ) ) as $n => $plan ) {
+				if ( (string) $plan['key'] === (string) $service['plan_key'] ) {
+					$position = $n;
+					break;
+				}
+			}
+
+			$rows[] = array(
+				'menu_order' => (int) get_post_field( 'menu_order', $product_id ),
+				'title'      => (string) $service['product_name'],
+				'product_id' => $product_id,
+				'position'   => $position,
+				'index'      => $i,
+				'payload'    => $service,
+			);
+		}
+
+		usort(
+			$rows,
+			function ( $a, $b ) {
+				// product_id 排在名稱之後：兩個同名商品的方案才不會交錯在一起。
+				// index 墊底讓排序穩定（usort 不保證相等元素的順序）。
+				return array( $a['menu_order'], $a['title'], $a['product_id'], $a['position'], $a['index'] )
+					<=> array( $b['menu_order'], $b['title'], $b['product_id'], $b['position'], $b['index'] );
+			}
+		);
+
+		return array_column( $rows, 'payload' );
 	}
 
 	/**

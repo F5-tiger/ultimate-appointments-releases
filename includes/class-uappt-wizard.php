@@ -2,8 +2,9 @@
 /**
  * 前台預約精靈：shortcode `[uappt_booking]`。
  *
- * 步驟式的預約介面（選人 → 選項目 → 選時間 → 確認），設計與決策見
- * docs/booking-wizard-plan.md。跟商品頁那套內嵌表單完全獨立：自己的 CSS／JS、
+ * 步驟式的預約介面（選人 → 選服務 → 選方案 → 選時間 → 確認），設計與決策見
+ * docs/booking-wizard-plan.md；「服務」與「方案」拆成兩步是 v3.4.0，見
+ * docs/wizard-and-time-rules-plan.md。跟商品頁那套內嵌表單完全獨立：自己的 CSS／JS、
  * 自己的 class 前綴（`.uappt-wiz-*`），資料一律走 `/wp-json/uappt/v1/` 的唯讀
  * REST 端點。
  *
@@ -77,6 +78,10 @@ class UAPPT_Wizard {
 				// JS 要用它組出 Elementor 的 frontend/element_ready hook 名稱。
 				// 從這裡傳而不是在 JS 裡寫死，兩邊才不會各改各的。
 				'elementorWidget' => class_exists( 'UAPPT_Elementor' ) ? UAPPT_Elementor::WIDGET_BOOKING : self::SHORTCODE,
+				// 站上有沒有任何商品有兩個以上的方案。沒有的話步驟列一開始就不放
+				// 「方案」那格——不然沒在用方案的店家，每一次都會看到一格最後
+				// 一定被跳過的步驟。
+				'multiPlan'   => self::has_multi_plan_product(),
 				'weekdays' => array(
 					__( '日', 'ultimate-appointments' ),
 					__( '一', 'ultimate-appointments' ),
@@ -89,10 +94,14 @@ class UAPPT_Wizard {
 				'i18n'     => array(
 					'loading'        => __( '載入中…', 'ultimate-appointments' ),
 					'error'          => __( '載入失敗，請稍後再試。', 'ultimate-appointments' ),
-					'stepStaff'      => __( '選擇服務人員', 'ultimate-appointments' ),
-					'stepService'    => __( '選擇服務項目', 'ultimate-appointments' ),
-					'stepTime'       => __( '選擇時間', 'ultimate-appointments' ),
-					'stepConfirm'    => __( '確認預約', 'ultimate-appointments' ),
+					// 步驟列的標籤（同時也是每一步的標題）。不加「選擇」兩個字：
+					// v3.4.0 多了「方案」一步，五格在手機上放不下六個字的標籤，
+					// 會折成兩行。桌機也用同一組，兩邊沒有理由不一樣。
+					'stepStaff'      => __( '服務人員', 'ultimate-appointments' ),
+					'stepService'    => __( '服務項目', 'ultimate-appointments' ),
+					'stepPlan'       => __( '方案', 'ultimate-appointments' ),
+					'stepTime'       => __( '時間', 'ultimate-appointments' ),
+					'stepConfirm'    => __( '確認', 'ultimate-appointments' ),
 					'anyStaff'       => __( '不指定', 'ultimate-appointments' ),
 					'anyStaffHint'   => __( '由店家安排', 'ultimate-appointments' ),
 					'lastStaff'      => __( '上次為您服務', 'ultimate-appointments' ),
@@ -104,6 +113,10 @@ class UAPPT_Wizard {
 					'prevMonth'      => __( '上個月', 'ultimate-appointments' ),
 					'nextMonth'      => __( '下個月', 'ultimate-appointments' ),
 					'minutes'        => __( '分鐘', 'ultimate-appointments' ),
+					/* translators: %d: 方案數 */
+					'planCount'      => __( '%d 個方案', 'ultimate-appointments' ),
+					/* translators: %s: 最低價格 */
+					'priceFrom'      => __( '%s 起', 'ultimate-appointments' ),
 					'staffSurcharge' => __( '指定加價', 'ultimate-appointments' ),
 					'confirm'        => __( '確認預約', 'ultimate-appointments' ),
 					'submitting'     => __( '處理中…', 'ultimate-appointments' ),
@@ -120,6 +133,32 @@ class UAPPT_Wizard {
 				),
 			)
 		);
+	}
+
+	/**
+	 * 站上有沒有任何商品同時開放兩個以上的方案。
+	 *
+	 * 直接讀反查索引：索引本來就只收販售中的方案（停售的不算），而且每次存
+	 * 商品都會重建，不必另外維護一個旗標。
+	 *
+	 * @return bool
+	 */
+	protected static function has_multi_plan_product() {
+		if ( ! class_exists( 'UAPPT_Service_Index' ) ) {
+			return true;
+		}
+
+		$plans = array();
+		foreach ( UAPPT_Service_Index::get() as $entries ) {
+			foreach ( $entries as $entry ) {
+				$plans[ (int) $entry['product_id'] ][ (string) $entry['plan_key'] ] = true;
+				if ( count( $plans[ (int) $entry['product_id'] ] ) > 1 ) {
+					return true;
+				}
+			}
+		}
+
+		return false;
 	}
 
 	/**

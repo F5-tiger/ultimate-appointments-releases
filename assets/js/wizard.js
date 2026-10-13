@@ -1,8 +1,12 @@
 /**
  * 前台預約精靈。
  *
- * 一頁一個選項，選完自動進下一步：選人 → 選項目 → 選時間 → 確認。
- * `data-mode="service_first"` 時前兩步對調。
+ * 一頁一個選項，選完自動進下一步：選人 → 選服務 → 選方案 → 選時間 → 確認。
+ * `data-mode="service_first"` 時「人」排到「方案」後面。
+ *
+ * 「服務」是商品、「方案」是商品裡的服務方案（v3.4.0 拆成兩步，之前是全部方案
+ * 攤平在同一頁）。只有一個方案的商品選了就直接定案，「方案」那一步會從步驟列
+ * 消失，所以步驟清單不是固定的，見 buildSteps()／next()。
  *
  * 資料全部走 /wp-json/uappt/v1/ 的唯讀端點；最後送出是組一張原生表單 POST
  * 到目前網址（帶 add-to-cart），交給 WooCommerce 既有的加入購物車流程，
@@ -54,6 +58,50 @@
 		} );
 	}
 
+	function fmt( template, value ) {
+		return String( template || '' ).replace( /%[sd]/, value );
+	}
+
+	/**
+	 * 把 /services 的方案清單依商品分組，保留後端排好的順序。
+	 *
+	 * @param {Array} list service_payload 陣列。
+	 * @return {Array} 每個元素：{ product_id, name, image, plans: [] }
+	 */
+	function groupByProduct( list ) {
+		var groups = [];
+		var byId = {};
+
+		list.forEach( function ( s ) {
+			var g = byId[ s.product_id ];
+			if ( ! g ) {
+				g = byId[ s.product_id ] = {
+					product_id: s.product_id,
+					name: s.product_name,
+					image: s.product_image || '',
+					plans: []
+				};
+				groups.push( g );
+			}
+			g.plans.push( s );
+		} );
+
+		return groups;
+	}
+
+	/**
+	 * 摘要、確認頁上的服務名稱：「美甲美睫・法式彩繪」。
+	 *
+	 * 只寫方案名稱的話，「油壓」「指壓」分不出是哪一項服務底下的。沒有方案的
+	 * 商品（plan_key 空字串）名稱本來就是商品名稱，不重複寫兩次。
+	 */
+	function serviceLabel( s ) {
+		if ( ! s ) {
+			return '';
+		}
+		return ( s.plan_key && s.name !== s.product_name ) ? s.product_name + '・' + s.name : s.name;
+	}
+
 	/** 本地日期字串（Y-m-d）。刻意不用 toISOString()——那會先轉成 UTC，跨時區會差一天。 */
 	function ymd( date ) {
 		var m = String( date.getMonth() + 1 ).padStart( 2, '0' );
@@ -78,7 +126,11 @@
 		this.state = {
 			staffId: this.locked.staff,
 			staffName: '',
+			// 選定的商品（groupByProduct() 的一組）；service 才是最後定案的方案。
+			product: null,
 			service: null,
+			// 方案是自動定案的（這個商品只有一個方案可選），「方案」那一步不顯示。
+			planAuto: false,
 			date: '',
 			slot: null,
 			month: new Date()
@@ -99,23 +151,47 @@
 		this.enter();
 	};
 
-	/** 依模式與鎖定值決定實際要走的步驟。 */
-	Wizard.prototype.buildSteps = function () {
+	/**
+	 * 時間之前的選擇步驟。
+	 *
+	 * @param {boolean} includeAuto 要不要包含「自動定案而跳過」的方案步驟。清除
+	 *                              狀態時要包含——它雖然沒顯示，選擇還是存在。
+	 */
+	Wizard.prototype.choiceSteps = function ( includeAuto ) {
 		var steps = ( 'service_first' === this.mode )
-			? [ 'service', 'staff' ]
-			: [ 'staff', 'service' ];
+			? [ 'service', 'plan', 'staff' ]
+			: [ 'staff', 'service', 'plan' ];
 
-		steps = steps.filter( function ( name ) {
-			if ( 'staff' === name && this.locked.staff ) {
-				return false;
+		return steps.filter( function ( name ) {
+			if ( 'staff' === name ) {
+				return ! this.locked.staff;
 			}
-			if ( 'service' === name && this.locked.service ) {
-				return false;
+			if ( 'service' === name ) {
+				// 限定商品（data-product）時不用選商品，直接從方案開始。
+				return ! this.locked.service && ! this.locked.product;
+			}
+			if ( 'plan' === name ) {
+				if ( this.locked.service ) {
+					return false;
+				}
+				// 站上沒有多方案的商品就整格不放（CFG.multiPlan）。但只要實際遇到
+				// 多方案的商品、或限定了商品（方案數要問過才知道）就一定要放，
+				// 不然旗標一過時，客人會帶著沒定案的方案直接跳到選時間。
+				var needed = false !== CFG.multiPlan
+					|| this.locked.product
+					|| ( this.state.product && this.state.product.plans.length > 1 );
+				if ( ! needed ) {
+					return false;
+				}
+				return includeAuto || ! this.state.planAuto;
 			}
 			return true;
 		}, this );
+	};
 
-		return steps.concat( [ 'time', 'confirm' ] );
+	/** 依模式、鎖定值與目前的選擇決定實際要走的步驟。 */
+	Wizard.prototype.buildSteps = function () {
+		return this.choiceSteps( false ).concat( [ 'time', 'confirm' ] );
 	};
 
 	Wizard.prototype.render = function () {
@@ -137,6 +213,7 @@
 		return {
 			staff: t( 'stepStaff' ),
 			service: t( 'stepService' ),
+			plan: t( 'stepPlan' ),
 			time: t( 'stepTime' ),
 			confirm: t( 'stepConfirm' )
 		}[ name ] || '';
@@ -174,7 +251,11 @@
 		// 從確認頁點回「選擇服務人員」，就會被上一輪選的服務反過來篩選，
 		// 名單裡少掉幾位人員——客人只會覺得人不見了。（實際回報過的症狀。）
 		if ( target < this.index ) {
-			this.clearStateAfter( target );
+			var name = this.steps[ target ];
+			this.clearStateAfter( name );
+			// 清掉選擇之後，原本自動跳過的「方案」可能要回來，步驟要重算。
+			this.steps = this.buildSteps();
+			target = Math.max( 0, this.steps.indexOf( name ) );
 		}
 
 		this.index = target;
@@ -182,30 +263,57 @@
 	};
 
 	/**
-	 * 清掉第 index 步之後、各步驟各自負責的選擇。
+	 * 清掉某一步之後、各步驟各自負責的選擇。
 	 *
 	 * 鎖定的值（shortcode 屬性或網址參數指定的人員／服務）永遠保留——那不是
-	 * 客人在流程中選的，回到前面也不該被清掉。鎖定的步驟本來就不在 steps 裡，
+	 * 客人在流程中選的，回到前面也不該被清掉。鎖定的步驟本來就不在清單裡，
 	 * 所以這個迴圈自然不會碰到它們。
 	 *
-	 * @param {number} index 要回到的步驟索引。
+	 * 走的是**包含自動跳過的方案步驟**的清單：方案雖然沒顯示，選擇還是存在。
+	 * 例如限定商品＋先選人，這位人員只做得了一個方案，方案是自動定案的；
+	 * 退回選人那一步時不清掉它，換一位人員後就會帶著上一位的方案往下走。
+	 *
+	 * @param {string} name 要回到的步驟名稱。
 	 */
-	Wizard.prototype.clearStateAfter = function ( index ) {
-		for ( var i = index + 1; i < this.steps.length; i++ ) {
-			if ( 'staff' === this.steps[ i ] ) {
+	Wizard.prototype.clearStateAfter = function ( name ) {
+		var steps = this.choiceSteps( true ).concat( [ 'time', 'confirm' ] );
+
+		for ( var i = steps.indexOf( name ) + 1; i < steps.length; i++ ) {
+			if ( 'staff' === steps[ i ] ) {
 				this.state.staffId = 0;
 				this.state.staffName = '';
-			} else if ( 'service' === this.steps[ i ] ) {
+			} else if ( 'service' === steps[ i ] ) {
+				this.state.product = null;
 				this.state.service = null;
-			} else if ( 'time' === this.steps[ i ] ) {
+				this.state.planAuto = false;
+			} else if ( 'plan' === steps[ i ] ) {
+				this.state.service = null;
+				this.state.planAuto = false;
+			} else if ( 'time' === steps[ i ] ) {
 				this.state.date = '';
 				this.state.slot = null;
 			}
 		}
 	};
 
+	/**
+	 * 往下一步。
+	 *
+	 * 不能單純 index + 1：剛才的選擇可能讓「方案」那一步消失（只有一個方案的
+	 * 商品），步驟要先重算，再找「原本排在後面、現在還在」的第一步。
+	 */
 	Wizard.prototype.next = function () {
-		this.goTo( this.index + 1 );
+		var after = this.steps.slice( this.index + 1 );
+		this.steps = this.buildSteps();
+
+		for ( var i = 0; i < after.length; i++ ) {
+			var at = this.steps.indexOf( after[ i ] );
+			if ( -1 !== at ) {
+				this.index = at;
+				this.enter();
+				return;
+			}
+		}
 	};
 
 	Wizard.prototype.enter = function () {
@@ -226,6 +334,7 @@
 		var fn = {
 			staff: this.stepStaff,
 			service: this.stepService,
+			plan: this.stepPlan,
 			time: this.stepTime,
 			confirm: this.stepConfirm
 		}[ name ];
@@ -340,25 +449,133 @@
 		return card;
 	};
 
-	// --- 步驟：選服務項目 -------------------------------------------------
+	// --- 步驟：選服務項目（商品） -----------------------------------------
 
 	Wizard.prototype.stepService = function () {
 		// 跟 stepStaff() 是對稱的：已經知道人員時只列這個人做得了的服務，
 		// 而「已經知道」同樣不包含「退回來改」——先選項目模式下退回這一步時，
 		// goTo() 會先把 staffId 清掉，否則服務清單會被上一輪選的人員縮掉。
 		api( 'services', {
-			staff_id: this.state.staffId || 0,
-			product_id: this.locked.product || 0
+			staff_id: this.state.staffId || 0
 		} ).then( function ( data ) {
-			var list = data.services || [];
-			if ( ! list.length ) {
+			var groups = groupByProduct( data.services || [] );
+			if ( ! groups.length ) {
 				this.setBody( [ el( 'p', 'uappt-wiz-empty', t( 'noService' ) ) ] );
 				return;
 			}
 
-			var grid = el( 'div', 'uappt-wiz-grid uappt-wiz-grid-service' );
+			// 整份清單都沒有主圖就不畫圖片那一欄：一整排首字色塊不好看，
+			// 沒在用商品圖的店家拿掉反而乾淨。有一部分有圖時才用色塊補位，
+			// 卡片的文字才會對齊。
+			var withThumb = groups.some( function ( g ) {
+				return !! g.image;
+			} );
 
-			list.forEach( function ( s ) {
+			var grid = el( 'div', 'uappt-wiz-grid uappt-wiz-grid-service' );
+			groups.forEach( function ( g ) {
+				grid.appendChild( this.productCard( g, withThumb ) );
+			}, this );
+
+			this.setBody( [ grid ] );
+		}.bind( this ) ).catch( this.fail.bind( this ) );
+	};
+
+	Wizard.prototype.productCard = function ( g, withThumb ) {
+		var card = el( 'button', 'uappt-wiz-card uappt-wiz-card-service uappt-wiz-card-product' );
+		card.type = 'button';
+
+		if ( withThumb ) {
+			var thumb = el( 'span', 'uappt-wiz-thumb' );
+			if ( g.image ) {
+				var img = document.createElement( 'img' );
+				img.src = g.image;
+				img.alt = '';
+				img.loading = 'lazy';
+				thumb.appendChild( img );
+			} else {
+				thumb.classList.add( 'is-initial' );
+				thumb.textContent = String( g.name || '' ).trim().charAt( 0 );
+			}
+			card.appendChild( thumb );
+		}
+
+		var durations = g.plans.map( function ( p ) {
+			return p.duration_minutes;
+		} );
+		var minDur = Math.min.apply( null, durations );
+		var maxDur = Math.max.apply( null, durations );
+		var cheapest = g.plans.reduce( function ( a, b ) {
+			return b.price < a.price ? b : a;
+		} );
+		var samePrice = g.plans.every( function ( p ) {
+			return p.price === cheapest.price;
+		} );
+
+		// 右欄跟方案卡片同一個結構（時長在上、價格在下），兩步切換時價格的位置
+		// 不會跳。方案數放在名稱底下：原本跟時長併成一行「60–90 分鐘・3 個方案」，
+		// 手機上會從「方」「案」中間折行。
+		var main = el( 'span', 'uappt-wiz-card-main' );
+		main.appendChild( el( 'span', 'uappt-wiz-card-name', g.name ) );
+		if ( g.plans.length > 1 ) {
+			main.appendChild( el( 'span', 'uappt-wiz-card-note', fmt( t( 'planCount' ), g.plans.length ) ) );
+		}
+		card.appendChild( main );
+
+		var meta = el( 'span', 'uappt-wiz-card-meta' );
+		meta.appendChild( el( 'span', 'uappt-wiz-card-note', ( minDur === maxDur ? minDur : minDur + '–' + maxDur ) + ' ' + t( 'minutes' ) ) );
+		meta.appendChild( el(
+			'span',
+			'uappt-wiz-card-price',
+			samePrice ? cheapest.price_html : fmt( t( 'priceFrom' ), cheapest.price_html )
+		) );
+		card.appendChild( meta );
+
+		card.addEventListener( 'click', function () {
+			this.state.product = g;
+			// 只有一個方案可選：直接定案，「方案」那一步會從步驟列消失。
+			if ( 1 === g.plans.length ) {
+				this.pickPlan( g.plans[ 0 ], true );
+			} else {
+				this.state.service = null;
+				this.state.planAuto = false;
+				this.next();
+			}
+		}.bind( this ) );
+
+		return card;
+	};
+
+	// --- 步驟：選方案 -----------------------------------------------------
+
+	Wizard.prototype.stepPlan = function () {
+		// 從「選擇服務」點進來時方案已經在手上（那一步就是依同一位人員查的）。
+		// 限定商品（data-product）時沒有那一步，要自己查。
+		var ready = this.state.product
+			? Promise.resolve( [ this.state.product ] )
+			: api( 'services', {
+				staff_id: this.state.staffId || 0,
+				product_id: this.locked.product || 0
+			} ).then( function ( data ) {
+				return groupByProduct( data.services || [] );
+			} );
+
+		ready.then( function ( groups ) {
+			var g = groups[ 0 ];
+			if ( ! g || ! g.plans.length ) {
+				this.setBody( [ el( 'p', 'uappt-wiz-empty', t( 'noService' ) ) ] );
+				return;
+			}
+
+			this.state.product = g;
+
+			// 限定商品＋先選人：這位人員只做得了其中一個方案時一樣直接定案。
+			if ( 1 === g.plans.length ) {
+				this.pickPlan( g.plans[ 0 ], true );
+				return;
+			}
+
+			var grid = el( 'div', 'uappt-wiz-grid uappt-wiz-grid-service' );
+			g.plans.forEach( function ( s ) {
 				var card = el( 'button', 'uappt-wiz-card uappt-wiz-card-service' );
 				card.type = 'button';
 
@@ -369,22 +586,31 @@
 				meta.appendChild( el( 'span', 'uappt-wiz-card-price', s.price_html ) );
 				card.appendChild( meta );
 
-				card.addEventListener( 'click', function () {
-					this.state.service = s;
-					// 這個服務不開放客人指定人員時，把先前選的人清掉，
-					// 避免摘要顯示一位其實不會被採用的人員。
-					if ( false === s.staff_choice ) {
-						this.state.staffId = 0;
-						this.state.staffName = '';
-					}
-					this.next();
-				}.bind( this ) );
-
+				card.addEventListener( 'click', this.pickPlan.bind( this, s, false ) );
 				grid.appendChild( card );
 			}, this );
 
-			this.setBody( [ grid ] );
+			// 方案名稱常常只是「60 分鐘」「進階」這種詞，上面標出是哪一項服務。
+			this.setBody( [ el( 'p', 'uappt-wiz-step-head', g.name ), grid ] );
 		}.bind( this ) ).catch( this.fail.bind( this ) );
+	};
+
+	/**
+	 * 方案定案。
+	 *
+	 * @param {Object}  s    service_payload。
+	 * @param {boolean} auto 是不是因為只有一個方案而自動定案（「方案」那一步不顯示）。
+	 */
+	Wizard.prototype.pickPlan = function ( s, auto ) {
+		this.state.service = s;
+		this.state.planAuto = !! auto;
+		// 這個服務不開放客人指定人員時，把先前選的人清掉，
+		// 避免摘要顯示一位其實不會被採用的人員。
+		if ( false === s.staff_choice ) {
+			this.state.staffId = 0;
+			this.state.staffName = '';
+		}
+		this.next();
 	};
 
 	// --- 步驟：選時間（月曆 + 時段） ---------------------------------------
@@ -589,7 +815,7 @@
 	Wizard.prototype.stepConfirm = function () {
 		var box = el( 'div', 'uappt-wiz-confirm' );
 
-		box.appendChild( this.confirmRow( t( 'summaryService' ), this.state.service.name ) );
+		box.appendChild( this.confirmRow( t( 'summaryService' ), serviceLabel( this.state.service ) ) );
 		if ( this.state.staffName ) {
 			box.appendChild( this.confirmRow( t( 'summaryStaff' ), this.state.staffName ) );
 		}
@@ -666,7 +892,10 @@
 			parts.push( this.state.staffName );
 		}
 		if ( this.state.service ) {
-			parts.push( this.state.service.name );
+			parts.push( serviceLabel( this.state.service ) );
+		} else if ( this.state.product ) {
+			// 選了商品、還在選方案：先讓客人看到自己點了哪一項。
+			parts.push( this.state.product.name );
 		}
 		if ( this.state.date && this.state.slot ) {
 			parts.push( this.state.date + ' ' + this.state.slot.start );

@@ -125,6 +125,28 @@ class UAPPT_Product {
 			true
 		);
 
+		// 可預約時段的編輯器（v3.4.0）。排在 admin-product.js 後面：送出前的檢查要接在
+		// 方案名稱、人員必填那兩個檢查之後（jQuery 的事件依註冊順序執行）。
+		wp_enqueue_script(
+			'uappt-admin-time-rule',
+			UAPPT_PLUGIN_URL . 'assets/js/admin-time-rule.js',
+			array( 'jquery', 'uappt-admin-product' ),
+			UAPPT_VERSION,
+			true
+		);
+		wp_localize_script(
+			'uappt-admin-time-rule',
+			'UAPPT_TimeRule',
+			array(
+				/* translators: %s: 看不懂的時間片段 */
+				'bad_times'  => __( '看不懂這些時間：%s。請用 24 小時制，例如 09:30、14:00。', 'ultimate-appointments' ),
+				'need_times' => __( '請填至少一個開始時間，例如 10:00、14:00。', 'ultimate-appointments' ),
+				'need_range' => __( '請填最早與最晚的開始時間，最晚不能早於最早。', 'ultimate-appointments' ),
+				'need_days'  => __( '請至少勾一個星期。', 'ultimate-appointments' ),
+				'need_row'   => __( '請至少留一列。', 'ultimate-appointments' ),
+			)
+		);
+
 		wp_localize_script(
 			'uappt-admin-product',
 			'UAPPT_AdminProduct',
@@ -151,6 +173,14 @@ class UAPPT_Product {
 				/* translators: %d: 人數 */
 				'chip_staff_count'    => __( '%d 位人員', 'ultimate-appointments' ),
 				'chip_inactive'       => __( '暫停銷售', 'ultimate-appointments' ),
+				// 可預約時段（v3.4.0）。
+				/* translators: %s: 開始時間，例如 10:00、14:00 */
+				'chip_sessions'       => __( '場次 %s', 'ultimate-appointments' ),
+				/* translators: %s: 時間範圍，例如 13:00–17:00 */
+				'chip_range'          => __( '%s 開始', 'ultimate-appointments' ),
+				'chip_more'           => __( ' 等', 'ultimate-appointments' ),
+				'chip_no_limit'       => __( '不限時段', 'ultimate-appointments' ),
+				'chip_time_inherit'   => __( '沿用商品的可預約時段', 'ultimate-appointments' ),
 				'currency'            => html_entity_decode( get_woocommerce_currency_symbol(), ENT_QUOTES, 'UTF-8' ),
 				// 批次編輯（v3.3.0）。
 				'price_decimals'      => wc_get_price_decimals(),
@@ -332,6 +362,16 @@ class UAPPT_Product {
 			)
 		);
 
+		echo '</div>';
+
+		// --- 可預約時段（v3.4.0）---
+		// 獨立一個區塊、排在時長／緩衝後面：它跟時長一樣是「這項服務的規格」，方案沒設
+		// 就沿用這裡；但它不是一個數字欄位，塞進上面那組會讓 WooCommerce 的兩欄版面
+		// 跑掉。
+		echo '<div class="options_group uappt-time-rule-group">';
+		echo '<p class="form-field"><strong>' . esc_html__( '可預約時段（方案未設定時沿用這裡）', 'ultimate-appointments' ) . '</strong></p>';
+		echo UAPPT_Time_Rule::render_editor( UAPPT_Time_Rule::META, get_post_meta( $product_id, UAPPT_Time_Rule::META, true ) ); // phpcs:ignore WordPress.Security.EscapeOutput -- render_editor() 逐欄位跳脫。
+		echo UAPPT_Time_Rule::render_row_template(); // phpcs:ignore WordPress.Security.EscapeOutput
 		echo '</div>';
 
 		// --- 服務人員安排 ---
@@ -812,6 +852,7 @@ class UAPPT_Product {
 				'buffer_after'  => '',
 				'staff_ids'     => array(),
 				'active'        => true,
+				'time_rule'     => '',
 			)
 		);
 
@@ -819,10 +860,12 @@ class UAPPT_Product {
 		$inactive = empty( $plan['active'] );
 
 		// 收在展開層裡的設定一旦有值就預設展開：看不見卻仍然生效的設定，是這個分頁
-		// 最容易讓人算錯檔期的地方。
+		// 最容易讓人算錯檔期的地方。可預約時段只要不是「沿用商品」就算有值——
+		// 明確選「不限制」也是（商品限定了場次，這個方案偏偏不限）。
 		$has_advanced = $inactive
 			|| '' !== (string) $plan['buffer_before']
-			|| '' !== (string) $plan['buffer_after'];
+			|| '' !== (string) $plan['buffer_after']
+			|| is_array( $plan['time_rule'] );
 
 		/* translators: %d: 沿用的分鐘數 */
 		$ph = __( '沿用 %d', 'ultimate-appointments' );
@@ -915,6 +958,12 @@ class UAPPT_Product {
 
 		$html .= '</div>';
 
+		// 可預約時段（v3.4.0）：預設「沿用商品設定」，跟上面兩個留空沿用的欄位同一個意思。
+		$html .= '<div class="uappt-plan-time-rule">';
+		$html .= '<span class="uappt-plan-field-label">' . esc_html__( '可預約時段', 'ultimate-appointments' ) . '</span>';
+		$html .= UAPPT_Time_Rule::render_editor( $base . '[time_rule]', $plan['time_rule'], true );
+		$html .= '</div>';
+
 		// 送出的是「停用」而不是「啟用」：沒勾的 checkbox 根本不會進 $_POST，用停用
 		// 當語意才能讓「沒送出＝啟用中」成立，不必額外的 hidden 欄位。
 		$html .= '<label class="uappt-plan-advanced-toggle">';
@@ -954,6 +1003,19 @@ class UAPPT_Product {
 				array(
 					'uappt_notice' => 'plan_rows_dropped',
 					'uappt_count'  => self::$dropped_plan_rows,
+				),
+				$location
+			);
+		}
+
+		// 選了固定場次／限定開始時段，卻沒有任何一列有效（沒勾星期、沒填時間）：
+		// 存成不限制，並講出來——不然管理者以為限制生效了，前台卻照舊每個空檔都開。
+		// 送出前的 JS 檢查會先擋，這裡是 JS 沒跑到時的保險。
+		if ( UAPPT_Time_Rule::$cleared > 0 ) {
+			return add_query_arg(
+				array(
+					'uappt_notice' => 'time_rule_cleared',
+					'uappt_count'  => UAPPT_Time_Rule::$cleared,
 				),
 				$location
 			);
@@ -1031,6 +1093,12 @@ class UAPPT_Product {
 		// 預約政策：留空存成空字串（＝沿用全域），不要存成 0，0 是有意義的值。
 		$product->update_meta_data( '_uappt_horizon_days', self::sanitize_optional_int( '_uappt_horizon_days', 1 ) );
 		$product->update_meta_data( '_uappt_min_lead_minutes', self::sanitize_optional_int( '_uappt_min_lead_minutes', 0 ) );
+
+		UAPPT_Time_Rule::$cleared = 0;
+		$product->update_meta_data(
+			UAPPT_Time_Rule::META,
+			UAPPT_Time_Rule::sanitize( isset( $_POST['_uappt_time_rule'] ) ? wp_unslash( $_POST['_uappt_time_rule'] ) : array() ) // phpcs:ignore WordPress.Security.ValidatedSanitizedInput -- UAPPT_Time_Rule::sanitize() 逐欄位清洗。
+		);
 
 		$plans = self::sanitize_plans_from_post();
 		$product->update_meta_data( self::PLANS_META, $plans );
@@ -1156,6 +1224,8 @@ class UAPPT_Product {
 				// 送出的欄位是「停用」：沒勾的 checkbox 不會進 $_POST，所以
 				// 「這個 key 不存在」自然就是啟用中，不需要額外的 hidden 欄位。
 				'active'        => empty( $row['inactive'] ),
+				// 空字串＝沿用商品；陣列（含「不限制」）＝這個方案自己的設定。
+				'time_rule'     => UAPPT_Time_Rule::sanitize( isset( $row['time_rule'] ) ? $row['time_rule'] : array(), true ),
 			);
 		}
 
@@ -1179,6 +1249,11 @@ class UAPPT_Product {
 		}
 
 		if ( isset( $row['staff_ids'] ) && is_array( $row['staff_ids'] ) && array_filter( $row['staff_ids'] ) ) {
+			return true;
+		}
+
+		// 可預約時段選了「沿用商品」以外的模式，也算填了東西。
+		if ( isset( $row['time_rule']['mode'] ) && ! in_array( $row['time_rule']['mode'], array( '', UAPPT_Time_Rule::MODE_INHERIT ), true ) ) {
 			return true;
 		}
 
@@ -1304,6 +1379,8 @@ class UAPPT_Product {
 					'buffer_after'  => '',
 					'staff_ids'     => array(),
 					'active'        => true,
+					// 可預約時段（v3.4.0）。空字串＝沿用商品，舊方案不需要遷移。
+					'time_rule'     => '',
 				)
 			);
 
@@ -1395,6 +1472,7 @@ class UAPPT_Product {
 		$product   = wc_get_product( $product_id );
 		$price     = $product ? (string) $product->get_price( 'edit' ) : '';
 		$plan_name = '';
+		$time_rule = get_post_meta( $product_id, UAPPT_Time_Rule::META, true );
 
 		$plans = self::get_plans( $product_id );
 
@@ -1423,6 +1501,11 @@ class UAPPT_Product {
 			if ( '' !== (string) $plan['price'] ) {
 				$price = (string) $plan['price'];
 			}
+			// 方案的可預約時段：空字串沿用商品；選了「不限制」是一個明確的值
+			// （商品限定了場次，這個方案偏偏不限），所以不能用 empty() 判斷。
+			if ( is_array( $plan['time_rule'] ) ) {
+				$time_rule = $plan['time_rule'];
+			}
 		}
 
 		if ( empty( $staff_ids ) ) {
@@ -1437,6 +1520,9 @@ class UAPPT_Product {
 			'price'                  => $price,
 			'plan_key'               => $plans ? sanitize_key( (string) $plan_key ) : '',
 			'plan_name'              => $plan_name,
+			// 已經解掉繼承、正規化過的可預約時段（見 UAPPT_Time_Rule）。時段計算與
+			// create_hold() 的檢查都只讀這一個值，跟時長、緩衝同一個模式。
+			'time_rule'              => UAPPT_Time_Rule::normalize( $time_rule ),
 			// 團體預約是商品層級的開關，不像時長/緩衝/人員可以被方案覆寫——
 			// 「一張訂單算幾個人頭」是銷售政策而不是服務規格，跟同一商品底下
 			// 選哪個方案無關。

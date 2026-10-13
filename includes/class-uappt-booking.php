@@ -119,6 +119,13 @@ class UAPPT_Booking {
 		// 限制，多位候選人員各自的分類設定不一致時，統一用同一套顯示即可。
 		$segments = self::segment_definitions();
 
+		// 可預約時段（v3.4.0）：這項服務這天可以從幾點開始。這天根本沒有場次時
+		// 不必再看人員。
+		$day_rule = UAPPT_Time_Rule::for_day( $settings['time_rule'], $date_ymd );
+		if ( self::day_rule_is_empty( $day_rule ) ) {
+			return array();
+		}
+
 		// 每位候選人員各自有自己的班表、顆粒、佔用狀況——分開計算不能共用一個
 		// 掃描步進值，否則會讓時長顆粒較粗的人員（例如 30 分鐘一格）被誤判成
 		// 也能承接不屬於他自己時間格線上的開始時間（例如 09:15）。
@@ -134,14 +141,8 @@ class UAPPT_Booking {
 			$occupancy = self::fetch_occupancy_map( $staff['id'], $date_ymd );
 
 			foreach ( $windows as $window ) {
-				for ( $service_start = $window['open_ts']; $service_start + $duration * 60 <= $window['close_ts']; $service_start += $interval * 60 ) {
+				foreach ( self::candidate_starts( $window, $date_ymd, $duration, $interval, $day_rule ) as $service_start ) {
 					if ( $service_start < $now_ts ) {
-						continue;
-					}
-
-					// 只保留「開始時間」的本地日期等於使用者查詢的 $date_ymd——這就是
-					// 「時段歸在實際日期」的落地：凌晨 01:00 只出現在那天的選單。
-					if ( wp_date( 'Y-m-d', $service_start ) !== $date_ymd ) {
 						continue;
 					}
 
@@ -270,7 +271,8 @@ class UAPPT_Booking {
 				$buf_post,
 				$now_ts,
 				$today,
-				$max_date
+				$max_date,
+				$settings['time_rule']
 			);
 			$cursor = uappt_local_date( $cursor, '+1 day' );
 		}
@@ -290,9 +292,10 @@ class UAPPT_Booking {
 	 * @param int    $now_ts     已含最少提前預約時間的界線。
 	 * @param string $today      今天 (Y-m-d)。
 	 * @param string $max_date   開放預約的最後一天 (Y-m-d)；空字串代表不限制。
+	 * @param array  $time_rule  正規化過的可預約時段（get_booking_settings() 的 time_rule）。
 	 * @return string open|full|closed|past|beyond
 	 */
-	protected static function classify_day( $candidates, $date_ymd, $occupancy, $duration, $buf_pre, $buf_post, $now_ts, $today, $max_date ) {
+	protected static function classify_day( $candidates, $date_ymd, $occupancy, $duration, $buf_pre, $buf_post, $now_ts, $today, $max_date, $time_rule ) {
 		if ( $date_ymd < $today ) {
 			return 'past';
 		}
@@ -300,25 +303,32 @@ class UAPPT_Booking {
 			return 'beyond';
 		}
 
-		$has_any_window = false;
+		// 這天沒有任何場次（沒有一列勾到這個星期）：跟沒排班一樣是「不開放」，不是「約滿」。
+		$day_rule = UAPPT_Time_Rule::for_day( $time_rule, $date_ymd );
+		if ( self::day_rule_is_empty( $day_rule ) ) {
+			return 'closed';
+		}
+
+		// 「有沒有任何一個開始時間」而不是「有沒有上班」：v3.4.0 起，有上班但場次
+		// 不在上班時間內（例如場次 10:00、人員下午才上班），客人該看到的是「不開放」
+		// 而不是「約滿」。沒有限制時也一樣——上班時間短到放不下這項服務的時長，
+		// 那天本來就做不了，不是被約滿。
+		$has_any_start = false;
 
 		foreach ( $candidates as $staff ) {
 			$windows = UAPPT_Staff::get_business_windows( $staff, $date_ymd );
 			if ( empty( $windows ) ) {
 				continue;
 			}
-			$has_any_window = true;
 
 			$interval = UAPPT_Staff::get_slot_interval( $staff );
 			$map      = isset( $occupancy[ (int) $staff['id'] ] ) ? $occupancy[ (int) $staff['id'] ] : array();
 
 			foreach ( $windows as $window ) {
-				for ( $service_start = $window['open_ts']; $service_start + $duration * 60 <= $window['close_ts']; $service_start += $interval * 60 ) {
+				foreach ( self::candidate_starts( $window, $date_ymd, $duration, $interval, $day_rule ) as $service_start ) {
+					$has_any_start = true;
+
 					if ( $service_start < $now_ts ) {
-						continue;
-					}
-					// 跟 get_available_slots() 一樣，只認「開始時間落在這一天」的時段。
-					if ( wp_date( 'Y-m-d', $service_start ) !== $date_ymd ) {
 						continue;
 					}
 
@@ -333,7 +343,67 @@ class UAPPT_Booking {
 			}
 		}
 
-		return $has_any_window ? 'full' : 'closed';
+		return $has_any_start ? 'full' : 'closed';
+	}
+
+	/**
+	 * 一個上班區間裡，這項服務可以從哪些時間開始（還沒看佔用與最少提前預約時間）。
+	 *
+	 * **get_available_slots() 與 classify_day() 共用這一支**：兩邊各寫一份的話，只要
+	 * 有一點不一致就會變成「月曆說有空、點進去沒有時段」。
+	 *
+	 * @param array      $window   UAPPT_Staff::get_business_windows() 的一個區間。
+	 * @param string     $date_ymd 查詢的日期 (Y-m-d)；只回傳開始時間落在這一天的。
+	 * @param int        $duration 服務時長（分鐘）。
+	 * @param int        $interval 人員的時段顆粒（分鐘）。
+	 * @param array|null $day_rule UAPPT_Time_Rule::for_day() 的結果；null＝不限制。
+	 * @return int[] 開始時間戳，由早到晚。
+	 */
+	protected static function candidate_starts( $window, $date_ymd, $duration, $interval, $day_rule ) {
+		$starts = array();
+
+		// 固定場次：只看列出的時間，不對齊人員的時段顆粒（場次可能是 10:15、人員是
+		// 30 分鐘一格）。佔用的格子由 grid_cells() 往下取整，會多佔一點、不會少佔，
+		// 所以不必另外處理。整段服務要落在同一個上班區間內，跟一般時段同一條規則。
+		if ( is_array( $day_rule ) && isset( $day_rule['fixed'] ) ) {
+			foreach ( $day_rule['fixed'] as $hm ) {
+				$start = self::local_ts( $date_ymd . ' ' . $hm . ':00' );
+				if ( $start >= $window['open_ts'] && $start + $duration * 60 <= $window['close_ts'] ) {
+					$starts[] = $start;
+				}
+			}
+			return $starts;
+		}
+
+		for ( $start = $window['open_ts']; $start + $duration * 60 <= $window['close_ts']; $start += $interval * 60 ) {
+			// 只保留「開始時間」的本地日期等於查詢的日期——這就是「時段歸在實際日期」
+			// 的落地：凌晨 01:00 只出現在那天的選單。
+			if ( wp_date( 'Y-m-d', $start ) !== $date_ymd ) {
+				continue;
+			}
+
+			// 限定開始時段：範圍內照人員的顆粒排，只是把範圍外的拿掉。
+			if ( is_array( $day_rule ) && ! UAPPT_Time_Rule::in_ranges( (int) wp_date( 'G', $start ) * 60 + (int) wp_date( 'i', $start ), $day_rule['ranges'] ) ) {
+				continue;
+			}
+
+			$starts[] = $start;
+		}
+
+		return $starts;
+	}
+
+	/**
+	 * for_day() 說「這天有限制、但一個場次都沒有」。
+	 *
+	 * @param array|null $day_rule UAPPT_Time_Rule::for_day() 的結果。
+	 * @return bool
+	 */
+	protected static function day_rule_is_empty( $day_rule ) {
+		if ( ! is_array( $day_rule ) ) {
+			return false;
+		}
+		return isset( $day_rule['fixed'] ) ? ! $day_rule['fixed'] : ! $day_rule['ranges'];
 	}
 
 	/**
@@ -454,6 +524,14 @@ class UAPPT_Booking {
 					)
 				);
 			}
+		}
+
+		// 可預約時段（v3.4.0）：固定場次／限定開始時段也是銷售政策，跟上面兩個同一組。
+		// 前台的時段清單只是體驗層，直接送出一個不在場次裡的時間要在這裡擋下；後台
+		// 手動建單與付款後補鎖（都帶 ignore_paused）放行——店家自己可以破例，客人
+		// 已付款的時段也不能被事後改的場次擋掉。
+		if ( empty( $args['ignore_paused'] ) && ! UAPPT_Time_Rule::allows( $settings['time_rule'], $date_ymd, $time_hm ) ) {
+			return new WP_Error( 'uappt_outside_sessions', __( '這個時間不是這項服務開放預約的時段，請重新選擇。', 'ultimate-appointments' ) );
 		}
 
 		$candidates = self::resolve_candidate_staff( $settings, $requested_staff );

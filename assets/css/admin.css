@@ -6284,3 +6284,215 @@ a.uappt-dash-card:hover {
 	color: var(--uappt-color-danger-ink);
 }
 
+
+/* =========================================================================
+ * 可預約時段編輯器（v3.4.0）
+ *
+ * 商品「預約設定」一組、每個方案卡片的「進階」裡各一組（.uappt-time-rule）。
+ * 版面全部由 data-mode 決定：不限制／沿用商品時只留模式與一行說明，固定場次只
+ * 顯示時間那格，限定開始時段只顯示最早／最晚。兩組輸入框都在 DOM 裡，切換比較時
+ * 填到一半的不會不見（存檔只留選定那組，見 UAPPT_Time_Rule::sanitize()）。
+ *
+ * ⚠️ 在 .woocommerce_options_panel 裡：label 要退掉 WooCommerce 的「浮在左邊
+ * 150px」、文字欄位要退掉「寬 50% 往左浮」，跟方案卡片同一組坑。選擇器一律從
+ * `.woocommerce_options_panel .uappt-time-rule` 起算，特異性至少 (0,2,1)，
+ * 不靠樣式表的載入順序。
+ * ========================================================================= */
+
+/* 商品層級那一組：左右內距跟方案區塊（.uappt-plans-rows）同一條邊界。 */
+.uappt-time-rule-group .uappt-time-rule {
+	padding: 0 var(--uappt-space-3) var(--uappt-space-3);
+}
+
+.woocommerce_options_panel .uappt-time-rule label {
+	float: none;
+	width: auto;
+	margin-left: 0;
+	padding: 0;
+}
+
+.uappt-time-rule .uappt-time-rule-modes {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--uappt-space-1) var(--uappt-space-4);
+}
+
+.woocommerce_options_panel .uappt-time-rule .uappt-time-rule-mode {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--uappt-space-1);
+	margin: 0;
+	cursor: pointer;
+}
+
+/* 說明跟著模式換：WooCommerce 把 .description 設成 inline 並往右推 7px，要整組
+   改回區塊。 */
+.woocommerce_options_panel .uappt-time-rule .uappt-time-rule-help {
+	display: none;
+	margin: var(--uappt-space-1) 0 0;
+	padding: 0;
+}
+
+.uappt-time-rule[data-mode="inherit"] .uappt-time-rule-help[data-for="inherit"],
+.uappt-time-rule[data-mode="none"] .uappt-time-rule-help[data-for="none"],
+.uappt-time-rule[data-mode="fixed"] .uappt-time-rule-help[data-for="fixed"],
+.uappt-time-rule[data-mode="range"] .uappt-time-rule-help[data-for="range"] {
+	display: block;
+}
+
+.uappt-time-rule[data-mode="inherit"] .uappt-time-rule-body,
+.uappt-time-rule[data-mode="none"] .uappt-time-rule-body,
+.uappt-time-rule[data-mode="fixed"] .uappt-time-rule-range,
+.uappt-time-rule[data-mode="range"] .uappt-time-rule-fixed {
+	display: none;
+}
+
+.uappt-time-rule .uappt-time-rule-body {
+	margin-top: var(--uappt-space-2);
+}
+
+.uappt-time-rule .uappt-time-rule-row {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: var(--uappt-space-2) var(--uappt-space-3);
+	padding: var(--uappt-space-2) 0;
+	border-bottom: 1px solid var(--uappt-color-border-subtle);
+}
+
+.uappt-time-rule .uappt-time-rule-row:first-child {
+	border-top: 1px solid var(--uappt-color-border-subtle);
+}
+
+/* 星期：七個小方塊，勾了是主色實心。checkbox 本身藏起來但保留可聚焦——
+   不能 display:none，那樣鍵盤就切不到了。 */
+.uappt-time-rule .uappt-weekdays {
+	display: inline-flex;
+	gap: 2px;
+}
+
+.woocommerce_options_panel .uappt-time-rule .uappt-weekday {
+	position: relative;
+	margin: 0;
+}
+
+.uappt-time-rule .uappt-weekday input {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	margin: 0;
+	opacity: 0;
+}
+
+.uappt-time-rule .uappt-weekday span {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 28px;
+	height: 28px;
+	border: 1px solid var(--uappt-color-border-strong);
+	border-radius: var(--uappt-radius-sm);
+	background: var(--uappt-surface);
+	color: var(--uappt-color-text-muted);
+	font-size: 12px;
+	line-height: 1;
+	cursor: pointer;
+	user-select: none;
+}
+
+.uappt-time-rule .uappt-weekday input:checked + span {
+	border-color: var(--uappt-color-primary);
+	background: var(--uappt-color-primary);
+	color: #fff;
+}
+
+.uappt-time-rule .uappt-weekday input:focus-visible + span {
+	box-shadow: var(--uappt-focus-ring);
+}
+
+.uappt-time-rule .uappt-time-rule-fixed {
+	flex: 1 1 180px;
+	min-width: 0;
+}
+
+.woocommerce_options_panel .uappt-time-rule input[type="text"],
+.woocommerce_options_panel .uappt-time-rule input[type="time"] {
+	float: none;
+	margin: 0;
+}
+
+.woocommerce_options_panel .uappt-time-rule input.uappt-time-rule-times {
+	width: 100%;
+}
+
+.uappt-time-rule .uappt-time-rule-range {
+	display: inline-flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: var(--uappt-space-2) var(--uappt-space-3);
+}
+
+.woocommerce_options_panel .uappt-time-rule .uappt-time-rule-range label {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--uappt-space-1);
+	margin: 0;
+}
+
+.woocommerce_options_panel .uappt-time-rule .uappt-time-rule-range input[type="time"] {
+	width: auto;
+}
+
+.uappt-time-rule .uappt-time-rule-suffix {
+	color: var(--uappt-color-text-muted);
+}
+
+/* 刪除鈕推到最右邊：不管這一列是場次還是範圍，× 都在同一個位置。 */
+.uappt-time-rule .uappt-time-rule-remove {
+	flex: 0 0 auto;
+	width: 24px;
+	height: 24px;
+	margin-left: auto;
+	padding: 0;
+	border: 0;
+	border-radius: 50%;
+	background: transparent;
+	color: var(--uappt-color-text-muted);
+	font-size: 16px;
+	line-height: 24px;
+	text-align: center;
+	cursor: pointer;
+}
+
+.uappt-time-rule .uappt-time-rule-remove:hover,
+.uappt-time-rule .uappt-time-rule-remove:focus-visible {
+	background: var(--uappt-color-muted-bg);
+	color: var(--uappt-color-danger-ink);
+}
+
+.uappt-time-rule .uappt-time-rule-add {
+	margin-top: var(--uappt-space-2);
+}
+
+.woocommerce_options_panel .uappt-time-rule .uappt-time-rule-error {
+	flex-basis: 100%;
+	margin: 0;
+	padding: 0;
+	color: var(--uappt-color-danger-ink);
+	font-size: 12px;
+}
+
+.uappt-time-rule input.uappt-field-error {
+	border-color: var(--uappt-color-danger);
+}
+
+/* 方案卡片「進階」裡的那一組：標題跟上面的緩衝欄位用同一種小標，間距跟
+   「暫停銷售此方案」那行一致。 */
+.uappt-plans-group .uappt-plan-advanced .uappt-plan-time-rule {
+	margin-top: var(--uappt-space-3);
+}
+
+.uappt-plans-group .uappt-plan-time-rule > .uappt-plan-field-label {
+	display: block;
+	margin-bottom: var(--uappt-space-1);
+}

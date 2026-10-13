@@ -153,7 +153,7 @@ class UAPPT_Elementor_Booking extends \Elementor\Widget_Base {
 				'type'        => \Elementor\Controls_Manager::SELECT,
 				'default'     => '',
 				'options'     => self::service_options(),
-				'description' => __( '選了就會跳過「選擇服務項目」那一步。適合放在單一服務的介紹頁。', 'ultimate-appointments' ),
+				'description' => __( '選單一方案會跳過「服務項目」與「方案」兩步；選「全部方案」只跳過「服務項目」，方案讓客人選。適合放在單一服務的介紹頁。', 'ultimate-appointments' ),
 			)
 		);
 
@@ -540,16 +540,21 @@ class UAPPT_Elementor_Booking extends \Elementor\Widget_Base {
 	 * 值的格式是 `商品ID|方案鍵`：一個商品可以有多個服務方案，光靠商品 ID
 	 * 指不到「60 分鐘經典按摩」跟「90 分鐘全身舒壓」的差別。
 	 *
+	 * 有兩個以上方案的商品另外多一個 `商品ID|*`（v3.4.0）：限定在這個商品、
+	 * 但方案讓客人選——精靈會直接從「方案」那一步開始，對應 shortcode 的
+	 * `product` 屬性。放在單一服務的介紹頁（例如「美甲美睫」頁）最常用。
+	 *
 	 * @return array
 	 */
 	protected static function service_options() {
 		$options = array( '' => __( '不限定（讓客人選）', 'ultimate-appointments' ) );
 
-		if ( ! class_exists( 'UAPPT_Service_Index' ) || ! class_exists( 'UAPPT_Availability_Query' ) ) {
+		if ( ! class_exists( 'UAPPT_Service_Index' ) || ! class_exists( 'UAPPT_Availability_Query' ) || ! class_exists( 'UAPPT_Rest' ) ) {
 			return $options;
 		}
 
-		$seen = array();
+		$seen     = array();
+		$services = array();
 
 		foreach ( UAPPT_Service_Index::get() as $entries ) {
 			foreach ( $entries as $entry ) {
@@ -560,14 +565,30 @@ class UAPPT_Elementor_Booking extends \Elementor\Widget_Base {
 				$seen[ $key ] = true;
 
 				$payload = UAPPT_Availability_Query::service_payload( $entry['product_id'], $entry['plan_key'] );
-				if ( null === $payload ) {
-					continue;
+				if ( null !== $payload ) {
+					$services[] = $payload;
 				}
-
-				$options[ $key ] = $payload['product_name'] === $payload['name']
-					? $payload['name']
-					: $payload['product_name'] . ' — ' . $payload['name'];
 			}
+		}
+
+		// 跟精靈同一個順序，同一個商品的方案排在一起，「全部方案」那一項才放得進去。
+		$services = UAPPT_Rest::sort_services( $services );
+
+		$plan_counts = array_count_values( array_column( $services, 'product_id' ) );
+		$listed      = array();
+
+		foreach ( $services as $payload ) {
+			$product_id = (int) $payload['product_id'];
+
+			if ( $plan_counts[ $product_id ] > 1 && ! isset( $listed[ $product_id ] ) ) {
+				$listed[ $product_id ] = true;
+				/* translators: %s: 商品名稱 */
+				$options[ $product_id . '|*' ] = sprintf( __( '%s（全部方案，讓客人選）', 'ultimate-appointments' ), $payload['product_name'] );
+			}
+
+			$options[ $product_id . '|' . $payload['plan_key'] ] = $payload['product_name'] === $payload['name']
+				? $payload['name']
+				: $payload['product_name'] . ' — ' . $payload['name'];
 		}
 
 		return $options;
@@ -589,14 +610,22 @@ class UAPPT_Elementor_Booking extends \Elementor\Widget_Base {
 		}
 
 		// 服務選項的值是「商品ID|方案鍵」，拆回 shortcode 要的兩個參數。
-		$service_raw = isset( $settings['service'] ) ? (string) $settings['service'] : '';
-		$product_id  = 0;
-		$plan_key    = '';
+		// 方案鍵是 `*` 代表「限定這個商品、方案讓客人選」，走 shortcode 的 product 屬性。
+		$service_raw  = isset( $settings['service'] ) ? (string) $settings['service'] : '';
+		$product_id   = 0;
+		$plan_key     = '';
+		$only_product = 0;
 
 		if ( '' !== $service_raw ) {
 			$parts      = explode( '|', $service_raw, 2 );
 			$product_id = (int) $parts[0];
 			$plan_key   = isset( $parts[1] ) ? $parts[1] : '';
+
+			if ( '*' === $plan_key ) {
+				$only_product = $product_id;
+				$product_id   = 0;
+				$plan_key     = '';
+			}
 		}
 
 		// phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- render() 內部逐欄位跳脫。
@@ -606,6 +635,7 @@ class UAPPT_Elementor_Booking extends \Elementor\Widget_Base {
 				'staff'   => isset( $settings['staff'] ) ? (int) $settings['staff'] : 0,
 				'service' => $product_id,
 				'plan'    => $plan_key,
+				'product' => $only_product,
 			)
 		);
 	}

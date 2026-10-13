@@ -109,12 +109,105 @@
 			addChip( $chips, i18n.chip_staff_inherit, 'is-inherited' );
 		}
 
+		addTimeRuleChip( $chips, $row );
+
 		if ( $row.find( '.uappt-plan-inactive' ).is( ':checked' ) ) {
 			addChip( $chips, i18n.chip_inactive, 'is-inactive' );
 		}
 
 		if ( $row.hasClass( 'is-modified' ) ) {
 			addChip( $chips, i18n.chip_modified, 'is-modified' );
+		}
+	}
+
+	/**
+	 * 一組可預約時段規則的一行摘要：「場次 10:00、14:00」或「13:00–17:00 開始」。
+	 * 沒有限制、或還沒有任何有效列時回空字串。
+	 *
+	 * 只看有勾星期的列：沒勾星期的列存檔時會被丟掉，摘要不該把它算進去。
+	 */
+	function timeRuleSummary( $editor ) {
+		var tool = window.UAPPT_TimeRuleEditor;
+		if ( ! tool || ! $editor.length ) {
+			return '';
+		}
+
+		var mode = tool.mode( $editor );
+		var $rows = $editor.find( '.uappt-time-rule-row' ).filter( function () {
+			return $( this ).find( '.uappt-weekday input:checked' ).length > 0;
+		} );
+
+		if ( 'fixed' === mode ) {
+			var seen = {};
+			var times = [];
+			$rows.each( function () {
+				tool.parseTimes( $( this ).find( '.uappt-time-rule-times' ).val() ).times.forEach( function ( t ) {
+					if ( ! seen[ t ] ) {
+						seen[ t ] = true;
+						times.push( t );
+					}
+				} );
+			} );
+			times.sort();
+			if ( ! times.length ) {
+				return '';
+			}
+			// 場次多的時候標籤會撐得很長，收合列的重點是一眼看完，列前四個就好。
+			return fmt( i18n.chip_sessions, times.slice( 0, 4 ).join( '、' ) + ( times.length > 4 ? '…' : '' ) );
+		}
+
+		if ( 'range' === mode ) {
+			var ranges = [];
+			$rows.each( function () {
+				var from = tool.hm( $( this ).find( '.uappt-time-rule-from' ).val() );
+				var to = tool.hm( $( this ).find( '.uappt-time-rule-to' ).val() );
+				if ( from && to && from <= to && -1 === ranges.indexOf( from + '–' + to ) ) {
+					ranges.push( from + '–' + to );
+				}
+			} );
+			if ( ! ranges.length ) {
+				return '';
+			}
+			return fmt( i18n.chip_range, ranges[ 0 ] ) + ( ranges.length > 1 ? i18n.chip_more : '' );
+		}
+
+		return '';
+	}
+
+	/**
+	 * 方案卡片上的可預約時段標籤。
+	 *
+	 * 沿用商品時：商品有限制才顯示（淡色，跟其他沿用值同一個樣式）；商品也不限制就
+	 * 什麼都不放——「不限制」是預設狀態，每張卡片都掛一個只是雜訊。方案明確選了
+	 * 「不限制」也是同一個道理，只在商品有限制、這個方案偏偏不限時才講出來。
+	 */
+	function addTimeRuleChip( $chips, $row ) {
+		var tool = window.UAPPT_TimeRuleEditor;
+		var $editor = $row.find( '.uappt-time-rule' );
+		if ( ! tool || ! $editor.length ) {
+			return;
+		}
+
+		var productSummary = timeRuleSummary( $( '.uappt-time-rule-group .uappt-time-rule' ) );
+		var mode = tool.mode( $editor );
+
+		if ( 'inherit' === mode ) {
+			if ( productSummary ) {
+				addChip( $chips, productSummary, 'is-inherited', i18n.chip_time_inherit );
+			}
+			return;
+		}
+
+		if ( 'none' === mode ) {
+			if ( productSummary ) {
+				addChip( $chips, i18n.chip_no_limit );
+			}
+			return;
+		}
+
+		var own = timeRuleSummary( $editor );
+		if ( own ) {
+			addChip( $chips, own );
 		}
 	}
 
@@ -238,7 +331,9 @@
 		var hasValues =
 			$.trim( $row.find( '[data-field="buffer_before"]' ).val() ) !== '' ||
 			$.trim( $row.find( '[data-field="buffer_after"]' ).val() ) !== '' ||
-			$row.find( '.uappt-plan-inactive' ).is( ':checked' );
+			$row.find( '.uappt-plan-inactive' ).is( ':checked' ) ||
+			// 可預約時段不是「沿用商品」：明確選「不限制」也算，那是一個會蓋過商品設定的值。
+			'inherit' !== ( $row.find( '.uappt-time-rule-modes input:checked' ).val() || 'inherit' );
 		$row.find( '.uappt-toggle-advanced' ).toggleClass( 'has-values', hasValues );
 	}
 
@@ -494,6 +589,10 @@
 		if ( $row.find( '.uappt-plan-inactive' ).is( ':checked' ) ) {
 			filled = true;
 		}
+		// 可預約時段選了「沿用商品」以外的模式也算（跟 PHP 的 row_has_content() 一致）。
+		if ( 'inherit' !== ( $row.find( '.uappt-time-rule-modes input:checked' ).val() || 'inherit' ) ) {
+			filled = true;
+		}
 		return filled;
 	}
 
@@ -735,6 +834,19 @@
 		} );
 
 		$( '#post' ).on( 'submit', validateBeforeSubmit );
+
+		// 可預約時段（v3.4.0）改了：方案自己的編輯器→更新那張卡片的紅點與摘要；
+		// 商品層級的編輯器→所有「沿用商品」的方案摘要都要跟著換。
+		$( document ).on( 'uappt:time-rule-change', '.uappt-time-rule', function () {
+			var $plan = $( this ).closest( '.uappt-plan-row' );
+			var $targets = $plan.length ? $plan : $rows().find( '.uappt-plan-row' );
+			$targets.each( function () {
+				refreshAdvancedDot( $( this ) );
+				if ( $( this ).hasClass( 'is-collapsed' ) ) {
+					refreshSummary( $( this ) );
+				}
+			} );
+		} );
 
 		// 拖曳排序：順序由送出時的 DOM 順序決定，PHP 端本來就是照 $_POST 出現
 		// 順序建陣列（見 sanitize_plans_from_post()），不需要額外的排序欄位。

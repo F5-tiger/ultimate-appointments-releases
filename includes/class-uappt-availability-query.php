@@ -248,6 +248,7 @@ class UAPPT_Availability_Query {
 		}
 
 		$plan_name = isset( $settings['plan_name'] ) ? (string) $settings['plan_name'] : '';
+		$image_url = $product->get_image_id() ? wp_get_attachment_image_url( $product->get_image_id(), 'woocommerce_thumbnail' ) : '';
 
 		return array(
 			'product_id'       => (int) $product_id,
@@ -255,6 +256,9 @@ class UAPPT_Availability_Query {
 			// 沒有方案的商品就用商品名稱當服務名稱。
 			'name'             => '' !== $plan_name ? $plan_name : $product->get_name(),
 			'product_name'     => $product->get_name(),
+			// 精靈「選擇服務」那一步的商品卡片用（v3.4.0）。用 woocommerce_thumbnail
+			// 是因為它預設就是正方形裁切，卡片上的圓角方形不會被拉長。
+			'product_image'    => $image_url ? (string) $image_url : '',
 			'duration_minutes' => (int) $settings['duration_minutes'],
 			'price'            => (float) $settings['price'],
 			// wc_price() 回傳的是含標籤的 HTML，而且貨幣符號是 HTML entity

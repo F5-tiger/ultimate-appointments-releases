@@ -1302,6 +1302,10 @@ class UAPPT_Admin {
 					$count
 				);
 				break;
+			case 'time_rule_cleared':
+				$type    = 'warning';
+				$message = __( '商品已儲存，但有「可預約時段」（商品或方案）選了固定場次或限定開始時段，卻沒有任何一列勾了星期又填了時間，所以先存成「不限制」。請回到「預約設定」分頁補上後重新儲存。', 'ultimate-appointments' );
+				break;
 			case 'no_bookable_staff':
 				$type    = 'warning';
 				$message = __( '商品已儲存，但目前沒有任何設定讓這項服務可以被預約（可能是尚未選擇可服務的人員，或所有服務方案都缺少人員）。前台不會顯示任何可預約時段，請回到「預約設定」分頁檢查。', 'ultimate-appointments' );

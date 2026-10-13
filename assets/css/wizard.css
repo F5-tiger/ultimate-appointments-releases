@@ -136,7 +136,10 @@
 
 .uappt-wiz-crumb {
 	flex: 1 1 0;
-	min-width: 72px;
+	/* v3.4.0 多了「方案」一步，最多五格。手機可用寬 343px，五格各 72px 加間距
+	   會折行，所以降到 56px；標籤也同時拿掉了「選擇」兩個字（最長四個字，
+	   13px 下約 52px），五格剛好排得下一行。 */
+	min-width: 56px;
 	padding: 7px 4px;
 	border-bottom: 2px solid var(--uappt-wiz-border);
 	color: var(--uappt-wiz-disabled);
@@ -205,6 +208,53 @@
 
 .uappt-wiz-card-service {
 	justify-content: space-between;
+}
+
+/* 「選擇服務」的商品卡片：圖｜名稱＋方案數｜時長＋價格。
+   名稱那一欄吃掉剩下的寬度，右欄沿用方案卡片的 .uappt-wiz-card-meta，
+   價格跟方案卡片在同一個位置。 */
+.uappt-wiz-card-product {
+	justify-content: flex-start;
+}
+
+.uappt-wiz-card-main {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	flex: 1 1 auto;
+	min-width: 0;
+}
+
+/* 商品主圖。用圓角方形、不用圓形：圓形是人員大頭貼的形狀，兩種東西要一眼
+   分得出來。尺寸跟手機版的人員頭像一樣，兩步切換時卡片高度不會跳。
+   不吃「不顯示人員照片」那個開關（--uappt-wiz-avatar-display）——那是給
+   沒幫人員拍照的店家用的；整份服務清單都沒有主圖時，JS 本來就不會畫這一欄。 */
+.uappt-wiz-thumb {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 56px;
+	height: 56px;
+	flex: 0 0 56px;
+	border-radius: var(--uappt-wiz-radius);
+	overflow: hidden;
+	background: var(--uappt-wiz-surface-2);
+	color: var(--uappt-wiz-muted);
+	font-size: 1.6em; /* 24px */
+	font-weight: 600;
+}
+
+.uappt-wiz-thumb img {
+	width: 100%;
+	height: 100%;
+	object-fit: cover;
+	display: block;
+}
+
+/* 「選擇方案」上方的商品名稱。是 p，要墊 .uappt-wiz 才不會被佈景主題防禦歸零。 */
+.uappt-wiz .uappt-wiz-step-head {
+	margin-bottom: 12px;
+	font-weight: 600;
 }
 
 /* 圓形大頭貼：不同長寬比的上傳照片要在卡片上等高，所以固定尺寸 + cover 裁切。
