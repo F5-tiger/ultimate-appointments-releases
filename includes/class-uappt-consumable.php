@@ -272,6 +272,9 @@ class UAPPT_Consumable {
 	 *     @type int    $created_by 操作者；預設目前登入者。
 	 *     @type float  $set_to     盤點用：把結存校正成這個數字，$qty 由鎖住之後讀到的帳面算出
 	 *                              （傳進來的 $qty 不看）。差額是 0 就回 WP_Error。
+	 *     @type float|null $cost_total 指定這筆的成本快照（回沖用，v3.4.1）。有這個 key 就不看耗材
+	 *                              目前的單價——回沖要沖掉的是**當初扣用時**的成本，單價之後
+	 *                              改過的話，用現在的單價會沖不平。null＝成本未知。
 	 * }
 	 * @return int|WP_Error 異動 ID。
 	 */
@@ -325,7 +328,12 @@ class UAPPT_Consumable {
 		// 成本快照：用「異動當下」的單價，不是報表產出時的單價（規則 3）。
 		$unit_cost  = null;
 		$cost_total = null;
-		if ( null !== $row['unit_cost'] ) {
+		if ( array_key_exists( 'cost_total', $args ) ) {
+			if ( null !== $args['cost_total'] ) {
+				$cost_total = round( (float) $args['cost_total'], 2 );
+				$unit_cost  = 0.0 !== $qty ? round( $cost_total / abs( $qty ), 4 ) : null;
+			}
+		} elseif ( null !== $row['unit_cost'] ) {
 			$unit_cost  = (float) $row['unit_cost'];
 			$cost_total = round( $unit_cost * abs( $qty ), 2 );
 		}
@@ -681,29 +689,65 @@ class UAPPT_Consumable {
 	 * ------------------------------------------------------------------- */
 
 	/**
+	 * 這筆預約每一種耗材「還沒回沖」的數量與成本（v3.4.1）。
+	 *
+	 * 扣用與回沖都寫在流水帳裡（扣用 qty 是負的、回沖是正的），按耗材加總就是淨額。
+	 * 以前回沖是找「最後一次扣用的那一秒」——完成時逐項寫入，跨過秒界就只回沖到後半，
+	 * 前面那幾項永遠留在扣帳狀態；成本也是用回沖當下的單價重算，單價改過就沖不平。
+	 * 按淨額做就不需要任何「批次」的概念，完成→還原反覆幾次都會歸零。
+	 *
+	 * @param int $booking_id 預約 ID。
+	 * @return array consumable_id => ['qty'=>float 淨扣數量（正數）,'cost'=>float|null 淨成本]
+	 */
+	protected static function outstanding_for_booking( $booking_id ) {
+		global $wpdb;
+		$table = UAPPT_Install::table( 'consumable_moves' );
+
+		$rows = $wpdb->get_results( // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+			$wpdb->prepare(
+				"SELECT consumable_id,
+				        -SUM( qty ) AS net_qty,
+				        SUM( CASE WHEN type = %s THEN COALESCE( cost_total, 0 ) ELSE -COALESCE( cost_total, 0 ) END ) AS net_cost,
+				        SUM( CASE WHEN cost_total IS NOT NULL THEN 1 ELSE 0 END ) AS known_costs
+				 FROM {$table}
+				 WHERE booking_id = %d AND type IN ( %s, %s )
+				 GROUP BY consumable_id", // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+				self::MOVE_CONSUME,
+				(int) $booking_id,
+				self::MOVE_CONSUME,
+				self::MOVE_REVERT
+			),
+			ARRAY_A
+		);
+
+		$out = array();
+		foreach ( (array) $rows as $row ) {
+			$qty = round( (float) $row['net_qty'], 3 );
+			if ( $qty <= 0 ) {
+				continue;
+			}
+			$out[ (int) $row['consumable_id'] ] = array(
+				'qty'  => $qty,
+				// 全部都沒有成本快照（耗材當時沒設單價）＝成本未知，回沖也記未知，不要記成 0。
+				'cost' => (int) $row['known_costs'] > 0 ? round( (float) $row['net_cost'], 2 ) : null,
+			);
+		}
+
+		return $out;
+	}
+
+	/**
 	 * 這筆預約目前是「已扣用」狀態嗎？
 	 *
-	 * 用流水帳自己算（consume 筆數減 revert 筆數），不另外在 bookings 加旗標
-	 * 欄位：流水帳本來就是事實來源，多一個旗標就多一個會跟它不同步的東西。
+	 * 用流水帳自己算，不另外在 bookings 加旗標欄位：流水帳本來就是事實來源，多一個
+	 * 旗標就多一個會跟它不同步的東西。v3.4.1 起看的是「還有沒有任何一種耗材沒回沖完」，
+	 * 不是 consume 筆數減 revert 筆數——一次完成扣好幾種耗材時，筆數根本對不起來。
 	 *
 	 * @param int $booking_id 預約 ID。
 	 * @return bool
 	 */
 	public static function is_consumed( $booking_id ) {
-		global $wpdb;
-		$table = UAPPT_Install::table( 'consumable_moves' );
-
-		$net = (int) $wpdb->get_var( // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
-			$wpdb->prepare(
-				"SELECT COALESCE( SUM( CASE WHEN type = %s THEN 1 WHEN type = %s THEN -1 ELSE 0 END ), 0 )
-				FROM {$table} WHERE booking_id = %d",
-				self::MOVE_CONSUME,
-				self::MOVE_REVERT,
-				(int) $booking_id
-			)
-		);
-
-		return $net > 0;
+		return ! empty( self::outstanding_for_booking( $booking_id ) );
 	}
 
 	/**
@@ -792,58 +836,29 @@ class UAPPT_Consumable {
 	 * @return int 實際回沖了幾筆。
 	 */
 	public static function revert_for_booking( $booking ) {
-		global $wpdb;
-
 		// ⚠️ **刻意不做模組檢查**，理由見 consume_for_booking()：回沖是收拾
-		// 已經發生的事，擋掉會讓流水帳永遠對不起來。沒扣過的預約本來就會被
-		// 下面的 is_consumed() 擋掉，所以模組從頭到尾關著時這支也不會做事。
+		// 已經發生的事，擋掉會讓流水帳永遠對不起來。沒扣過的預約淨額本來就是 0，
+		// 所以模組從頭到尾關著時這支也不會做事。
 		if ( ! $booking ) {
 			return 0;
 		}
 
 		$booking_id = (int) $booking['id'];
-		if ( ! self::is_consumed( $booking_id ) ) {
-			return 0;
-		}
 
-		$table = UAPPT_Install::table( 'consumable_moves' );
-
-		// 回沖的是「這筆預約最近一次扣用」的那幾筆。用 created_at 找出最後
-		// 一批 consume——完成→還原→完成→還原的序列裡，每次回沖都只該對應
-		// 到它自己那一次的扣用。
-		$last_consume_at = $wpdb->get_var( // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
-			$wpdb->prepare(
-				"SELECT MAX( created_at ) FROM {$table} WHERE booking_id = %d AND type = %s",
-				$booking_id,
-				self::MOVE_CONSUME
-			)
-		);
-
-		if ( ! $last_consume_at ) {
-			return 0;
-		}
-
-		$rows = $wpdb->get_results( // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
-			$wpdb->prepare(
-				"SELECT consumable_id, qty FROM {$table} WHERE booking_id = %d AND type = %s AND created_at = %s",
-				$booking_id,
-				self::MOVE_CONSUME,
-				$last_consume_at
-			),
-			ARRAY_A
-		);
+		// 每一種耗材回沖它還沒回沖完的淨額，成本用當初扣用時的快照（見 outstanding_for_booking()）。
+		$outstanding = self::outstanding_for_booking( $booking_id );
 
 		$done = 0;
-		foreach ( (array) $rows as $row ) {
+		foreach ( $outstanding as $consumable_id => $net ) {
 			$result = self::record_move(
-				(int) $row['consumable_id'],
+				(int) $consumable_id,
 				self::MOVE_REVERT,
-				// 原本是負的（扣用），乘 -1 變成正的加回去。
-				-1 * (float) $row['qty'],
+				$net['qty'],
 				array(
 					'booking_id' => $booking_id,
 					'staff_id'   => (int) $booking['staff_id'],
 					'note'       => __( '預約還原為已確認，耗材回沖', 'ultimate-appointments' ),
+					'cost_total' => $net['cost'],
 				)
 			);
 			if ( ! is_wp_error( $result ) ) {

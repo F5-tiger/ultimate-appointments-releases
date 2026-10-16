@@ -500,6 +500,47 @@
 	color: var(--uappt-wiz-accent);
 }
 
+/* 合計底下的算式（「NT$1,000 × 2 人 ＋ 指定加價 NT$200」）：小字、不搶金額的視線。 */
+.uappt-wiz-confirm-note {
+	display: block;
+	margin-top: 2px;
+	font-size: 0.6em; /* 12px，相對於合計的 20px */
+	font-weight: 400;
+	color: var(--uappt-wiz-muted);
+}
+
+/* 報名人數：− 數字 ＋。按鈕跟「上一步」同一種外框，不另外發明一種按鈕。 */
+.uappt-wiz-stepper {
+	display: inline-flex;
+	align-items: center;
+	gap: 10px;
+}
+
+.uappt-wiz-stepper-btn {
+	width: 34px;
+	height: 34px;
+	padding: 0;
+	border: 1px solid var(--uappt-wiz-border);
+	border-radius: 50%;
+	background: var(--uappt-wiz-surface);
+	color: inherit;
+	font: inherit;
+	font-size: 1.2em; /* 18px */
+	line-height: 1;
+	cursor: pointer;
+}
+
+.uappt-wiz-stepper-btn:disabled {
+	color: var(--uappt-wiz-disabled);
+	cursor: not-allowed;
+}
+
+.uappt-wiz-stepper-value {
+	min-width: 3em;
+	text-align: center;
+	font-weight: 600;
+}
+
 .uappt-wiz-submit {
 	width: 100%;
 	margin-top: 18px;

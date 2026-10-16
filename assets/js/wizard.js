@@ -102,6 +102,23 @@
 		return ( s.plan_key && s.name !== s.product_name ) ? s.product_name + '・' + s.name : s.name;
 	}
 
+	/**
+	 * 金額格式，照 WooCommerce 的設定（貨幣符號、小數位數、千分位、符號位置）。
+	 * 確認頁的合計要算「方案價 × 人數 ＋ 指定加價」，伺服器給的 price_html 只是
+	 * 單價，所以要能自己格式化。
+	 *
+	 * @param {number} amount 金額。
+	 * @return {string}
+	 */
+	function money( amount ) {
+		var c = CFG.currency || {};
+		var decimals = parseInt( c.decimals, 10 ) || 0;
+		var fixed = Math.abs( Number( amount ) || 0 ).toFixed( decimals ).split( '.' );
+		var whole = fixed[ 0 ].replace( /\B(?=(\d{3})+(?!\d))/g, undefined !== c.thousand ? c.thousand : ',' );
+		var number = ( amount < 0 ? '-' : '' ) + whole + ( fixed[ 1 ] ? ( c.decimal || '.' ) + fixed[ 1 ] : '' );
+		return String( c.format || '%1$s%2$s' ).replace( '%1$s', c.symbol || '' ).replace( '%2$s', number );
+	}
+
 	/** 本地日期字串（Y-m-d）。刻意不用 toISOString()——那會先轉成 UTC，跨時區會差一天。 */
 	function ymd( date ) {
 		var m = String( date.getMonth() + 1 ).padStart( 2, '0' );
@@ -131,10 +148,21 @@
 			service: null,
 			// 方案是自動定案的（這個商品只有一個方案可選），「方案」那一步不顯示。
 			planAuto: false,
+			// 選人那一步被跳過：人員清單是空的（全站都不開放指定人員），由店家安排。
+			staffAuto: false,
+			// 指定人員的加價（v3.4.1）：確認頁的合計要算進去，跟購物車同一個公式。
+			staffAdjust: 0,
 			date: '',
 			slot: null,
+			// 時段回應裡的團體預約設定（v3.4.1）：開了才在確認頁顯示報名人數。
+			group: { enabled: false, max: 0 },
+			participants: 1,
 			month: new Date()
 		};
+
+		// 請求序號（v3.4.1）：快速換日期、翻月份時，較早的請求晚回來不能蓋掉新的畫面。
+		this.slotsSeq = 0;
+		this.monthSeq = 0;
 
 		this.steps = this.buildSteps();
 		this.index = 0;
@@ -164,7 +192,16 @@
 
 		return steps.filter( function ( name ) {
 			if ( 'staff' === name ) {
-				return ! this.locked.staff;
+				if ( this.locked.staff ) {
+					return false;
+				}
+				// 不開放指定人員的服務直接由店家安排，不要讓客人走進一個沒有選項的
+				// 選人頁（v3.4.1 以前會卡在「目前沒有可預約的服務人員」）。人員清單
+				// 整個是空的（全站不開放指定）也一樣跳過，見 stepStaff()。
+				if ( ! includeAuto && ( this.state.staffAuto || ( this.state.service && false === this.state.service.staff_choice ) ) ) {
+					return false;
+				}
+				return true;
 			}
 			if ( 'service' === name ) {
 				// 限定商品（data-product）時不用選商品，直接從方案開始。
@@ -282,6 +319,8 @@
 			if ( 'staff' === steps[ i ] ) {
 				this.state.staffId = 0;
 				this.state.staffName = '';
+				this.state.staffAdjust = 0;
+				this.state.staffAuto = false;
 			} else if ( 'service' === steps[ i ] ) {
 				this.state.product = null;
 				this.state.service = null;
@@ -289,9 +328,15 @@
 			} else if ( 'plan' === steps[ i ] ) {
 				this.state.service = null;
 				this.state.planAuto = false;
+				// 限定商品時沒有「服務」那一步，state.product 是方案那一步依**當時的人員**
+				// 查回來的快取。換人之後不清掉，就會沿用上一位人員的方案（v3.4.1 修正）。
+				if ( this.locked.product ) {
+					this.state.product = null;
+				}
 			} else if ( 'time' === steps[ i ] ) {
 				this.state.date = '';
 				this.state.slot = null;
+				this.state.participants = 1;
 			}
 		}
 	};
@@ -383,6 +428,17 @@
 		api( 'staff', params ).then( function ( data ) {
 			var list = data.staff || [];
 			if ( ! list.length ) {
+				// 還不知道服務就拿到空清單：全站都不開放指定人員（REST 刻意回空的，
+				// 見 UAPPT_Rest::get_staff()）。照那邊註解的本意退回「先選服務」——
+				// 由店家安排，跳過這一步（v3.4.1 以前會停在這裡）。
+				if ( ! this.state.service ) {
+					this.state.staffAuto = true;
+					this.state.staffId = 0;
+					this.state.staffName = '';
+					this.state.staffAdjust = 0;
+					this.next();
+					return;
+				}
 				this.setBody( [ el( 'p', 'uappt-wiz-empty', t( 'noStaff' ) ) ] );
 				return;
 			}
@@ -443,6 +499,7 @@
 		card.addEventListener( 'click', function () {
 			this.state.staffId = s.id;
 			this.state.staffName = isAny ? t( 'anyStaff' ) : s.name;
+			this.state.staffAdjust = isAny ? 0 : ( Number( s.price_adjustment ) || 0 );
 			this.next();
 		}.bind( this ) );
 
@@ -609,6 +666,7 @@
 		if ( false === s.staff_choice ) {
 			this.state.staffId = 0;
 			this.state.staffName = '';
+			this.state.staffAdjust = 0;
 		}
 		this.next();
 	};
@@ -626,6 +684,10 @@
 
 		this.state.date = '';
 		this.state.slot = null;
+		this.state.participants = 1;
+		// 換了步驟，之前那一輪還在路上的請求一律作廢。
+		this.slotsSeq++;
+		this.monthSeq++;
 
 		var wrap = el( 'div', 'uappt-wiz-time' );
 		this.calEl = el( 'div', 'uappt-wiz-cal' );
@@ -646,6 +708,9 @@
 		this.calEl.textContent = '';
 		this.calEl.appendChild( el( 'div', 'uappt-wiz-loading', t( 'loading' ) ) );
 
+		// 快速連按「下個月」時，前一個月的回應晚到不能把月曆蓋回去。
+		var seq = ++this.monthSeq;
+
 		api( 'days', {
 			product_id: this.state.service.product_id,
 			plan_key: this.state.service.plan_key,
@@ -653,8 +718,14 @@
 			from: ymd( first ),
 			to: ymd( last )
 		} ).then( function ( data ) {
-			this.renderCalendar( first, last, data.days || {} );
-		}.bind( this ) ).catch( this.fail.bind( this ) );
+			if ( seq === this.monthSeq ) {
+				this.renderCalendar( first, last, data.days || {} );
+			}
+		}.bind( this ) ).catch( function ( err ) {
+			if ( seq === this.monthSeq ) {
+				this.fail( err );
+			}
+		}.bind( this ) );
 	};
 
 	Wizard.prototype.renderCalendar = function ( first, last, days ) {
@@ -721,6 +792,7 @@
 		this.state.month = new Date( this.state.month.getFullYear(), this.state.month.getMonth() + delta, 1 );
 		this.state.date = '';
 		this.state.slot = null;
+		this.slotsSeq++; // 上個月選的那天的時段還在路上的話，回來時不要畫出來。
 		this.slotsEl.textContent = '';
 		this.slotsEl.appendChild( el( 'p', 'uappt-wiz-hint', t( 'pickDate' ) ) );
 		this.loadMonth();
@@ -741,14 +813,24 @@
 		this.slotsEl.textContent = '';
 		this.slotsEl.appendChild( el( 'div', 'uappt-wiz-loading', t( 'loading' ) ) );
 
+		// ⚠️ 只認最新那一次（v3.4.1）：先點 10/20 再點 10/21，10/20 的回應比較晚到的話，
+		// 以前會在「已選 10/21」的畫面上畫出 10/20 的時段，客人點下去送出的是
+		// 「10/21＋10/20 的時間」。
+		var seq = ++this.slotsSeq;
+
 		api( 'slots', {
 			product_id: this.state.service.product_id,
 			plan_key: this.state.service.plan_key,
 			staff_id: this.state.staffId || 0,
 			date: date
 		} ).then( function ( data ) {
-			this.renderSlots( data );
+			if ( seq === this.slotsSeq && date === this.state.date ) {
+				this.renderSlots( data );
+			}
 		}.bind( this ) ).catch( function ( err ) {
+			if ( seq !== this.slotsSeq ) {
+				return;
+			}
 			this.slotsEl.textContent = '';
 			this.slotsEl.appendChild( el( 'p', 'uappt-wiz-error', err.message || t( 'error' ) ) );
 		}.bind( this ) );
@@ -757,6 +839,12 @@
 	Wizard.prototype.renderSlots = function ( data ) {
 		var slots = data.slots || [];
 		this.slotsEl.textContent = '';
+
+		// 團體預約：確認頁要不要顯示報名人數、上限多少（每個時段另外有 max_group_size）。
+		this.state.group = {
+			enabled: !! data.group_booking,
+			max: parseInt( data.group_max_participants, 10 ) || 0
+		};
 
 		if ( ! slots.length ) {
 			this.slotsEl.appendChild( el( 'p', 'uappt-wiz-empty', t( 'noSlots' ) ) );
@@ -814,16 +902,31 @@
 
 	Wizard.prototype.stepConfirm = function () {
 		var box = el( 'div', 'uappt-wiz-confirm' );
+		var maxPeople = this.maxParticipants();
+		this.state.participants = Math.min( Math.max( 1, this.state.participants || 1 ), maxPeople );
 
 		box.appendChild( this.confirmRow( t( 'summaryService' ), serviceLabel( this.state.service ) ) );
 		if ( this.state.staffName ) {
-			box.appendChild( this.confirmRow( t( 'summaryStaff' ), this.state.staffName ) );
+			var staffText = this.state.staffName;
+			if ( this.state.staffId && this.state.staffAdjust > 0 ) {
+				staffText += '（' + t( 'staffSurcharge' ) + ' +' + money( this.state.staffAdjust ) + '）';
+			}
+			box.appendChild( this.confirmRow( t( 'summaryStaff' ), staffText ) );
 		}
 		box.appendChild( this.confirmRow(
 			t( 'summaryTime' ),
 			this.state.date + ' ' + this.state.slot.start + '–' + this.state.slot.end
 		) );
-		box.appendChild( this.confirmRow( t( 'total' ), this.state.service.price_html, 'is-total' ) );
+
+		// 報名人數（v3.4.1）：商品開了團體預約才出現。以前精靈完全沒有這個欄位，
+		// 開了團體預約的商品改用精靈之後就只能一次報一個人。
+		if ( maxPeople > 1 ) {
+			box.appendChild( this.participantsRow( maxPeople ) );
+		}
+
+		this.totalRow = this.confirmRow( t( 'total' ), '', 'is-total' );
+		box.appendChild( this.totalRow );
+		this.refreshTotal();
 
 		var submit = el( 'button', 'uappt-wiz-submit', t( 'confirm' ) );
 		submit.type = 'button';
@@ -837,6 +940,92 @@
 		box.appendChild( el( 'p', 'uappt-wiz-hint', t( 'nextNote' ) ) );
 
 		this.setBody( [ box ] );
+	};
+
+	/**
+	 * 這個時段最多能報幾人：商品的每單上限（0＝不限）跟這個時段單一人員剩下的名額
+	 * 取小的。後端 create_hold() 一樣會再擋一次，這裡只是不讓客人選到一定會失敗的數字。
+	 *
+	 * @return {number} 沒開團體預約時是 1。
+	 */
+	Wizard.prototype.maxParticipants = function () {
+		if ( ! this.state.group || ! this.state.group.enabled ) {
+			return 1;
+		}
+		var max = this.state.group.max > 0 ? this.state.group.max : 99;
+		if ( this.state.slot && this.state.slot.max_group_size ) {
+			max = Math.min( max, parseInt( this.state.slot.max_group_size, 10 ) || 1 );
+		}
+		return Math.max( 1, max );
+	};
+
+	Wizard.prototype.participantsRow = function ( maxPeople ) {
+		var row = el( 'div', 'uappt-wiz-confirm-row' );
+		row.appendChild( el( 'span', 'uappt-wiz-confirm-label', t( 'participants' ) ) );
+
+		var stepper = el( 'span', 'uappt-wiz-stepper' );
+		var minus = el( 'button', 'uappt-wiz-stepper-btn', '−' );
+		var plus = el( 'button', 'uappt-wiz-stepper-btn', '+' );
+		var value = el( 'span', 'uappt-wiz-stepper-value' );
+		minus.type = 'button';
+		plus.type = 'button';
+		minus.setAttribute( 'aria-label', t( 'fewer' ) );
+		plus.setAttribute( 'aria-label', t( 'more' ) );
+		value.setAttribute( 'aria-live', 'polite' );
+
+		var sync = function () {
+			value.textContent = fmt( t( 'people' ), this.state.participants );
+			minus.disabled = this.state.participants <= 1;
+			plus.disabled = this.state.participants >= maxPeople;
+			this.refreshTotal();
+		}.bind( this );
+
+		minus.addEventListener( 'click', function () {
+			this.state.participants = Math.max( 1, this.state.participants - 1 );
+			sync();
+		}.bind( this ) );
+		plus.addEventListener( 'click', function () {
+			this.state.participants = Math.min( maxPeople, this.state.participants + 1 );
+			sync();
+		}.bind( this ) );
+
+		stepper.appendChild( minus );
+		stepper.appendChild( value );
+		stepper.appendChild( plus );
+		row.appendChild( stepper );
+		sync();
+
+		return row;
+	};
+
+	/**
+	 * 合計＝方案價 × 人數 ＋ 指定加價（v3.4.1），跟購物車 UAPPT_Cart::apply_cart_item_price()
+	 * 同一個公式。以前直接顯示方案的單價，指定了有加價的人員時確認頁比購物車少收。
+	 * 加價只在客人真的指定了人員時才算（UAPPT_Booking::upcharge_for()）。
+	 */
+	Wizard.prototype.refreshTotal = function () {
+		if ( ! this.totalRow ) {
+			return;
+		}
+		var unit = Number( this.state.service.price ) || 0;
+		var people = this.state.participants || 1;
+		var adjust = this.state.staffId ? ( Number( this.state.staffAdjust ) || 0 ) : 0;
+
+		var valueEl = this.totalRow.querySelector( '.uappt-wiz-confirm-value' );
+		valueEl.textContent = money( unit * people + adjust );
+
+		// 有乘人數或加價時列出算式，客人看得懂數字從哪來。
+		var old = this.totalRow.querySelector( '.uappt-wiz-confirm-note' );
+		if ( old ) {
+			old.parentNode.removeChild( old );
+		}
+		if ( people > 1 || adjust > 0 ) {
+			var parts = [ money( unit ) + ( people > 1 ? ' × ' + fmt( t( 'people' ), people ) : '' ) ];
+			if ( adjust > 0 ) {
+				parts.push( t( 'staffSurcharge' ) + ' ' + money( adjust ) );
+			}
+			valueEl.appendChild( el( 'span', 'uappt-wiz-confirm-note', parts.join( ' ＋ ' ) ) );
+		}
 	};
 
 	Wizard.prototype.confirmRow = function ( label, value, modifier ) {
@@ -868,6 +1057,8 @@
 			uappt_booking_date: this.state.date,
 			uappt_booking_time: this.state.slot.start,
 			uappt_booking_staff: this.state.staffId || 0,
+			// 報名人數（v3.4.1）。UAPPT_Cart::validate_and_hold() 讀這個欄位，缺值就是 1。
+			uappt_participants: this.state.participants || 1,
 			uappt_booking_nonce: CFG.addNonce
 		};
 		fields[ CFG.sourceField ] = CFG.sourceValue;
@@ -967,6 +1158,7 @@
 
 					if ( match ) {
 						wiz.state.staffName = match.name;
+						wiz.state.staffAdjust = Number( match.price_adjustment ) || 0;
 					} else {
 						wiz.locked.staff = 0;
 						wiz.state.staffId = 0;

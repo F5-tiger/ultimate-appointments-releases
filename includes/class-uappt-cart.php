@@ -48,6 +48,11 @@ class UAPPT_Cart {
 
 		add_filter( 'woocommerce_get_item_data', array( $this, 'display_cart_item_data' ), 10, 2 );
 		add_filter( 'woocommerce_cart_item_quantity', array( $this, 'lock_quantity_display' ), 10, 3 );
+		// 數量鎖死在 1 不能只靠畫面（v3.4.1）：見 reject_quantity_update() 的說明。
+		add_filter( 'woocommerce_update_cart_validation', array( $this, 'reject_quantity_update' ), 10, 4 );
+		add_filter( 'woocommerce_store_api_product_quantity_maximum', array( $this, 'store_api_quantity_maximum' ), 10, 3 );
+		add_filter( 'woocommerce_store_api_product_quantity_editable', array( $this, 'store_api_quantity_editable' ), 10, 3 );
+		add_action( 'woocommerce_before_calculate_totals', array( $this, 'force_single_quantity' ), 5 );
 
 		add_action( 'woocommerce_cart_item_removed', array( $this, 'on_cart_item_removed' ), 10, 2 );
 		add_action( 'woocommerce_cart_item_restored', array( $this, 'on_cart_item_restored' ), 10, 2 );
@@ -550,6 +555,71 @@ class UAPPT_Cart {
 	}
 
 	/**
+	 * 傳統購物車頁「更新購物車」時，預約項目的數量只能是 1（或 0＝移除）。
+	 *
+	 * ⚠️ **lock_quantity_display() 只是畫面**（v3.4.1）：它輸出一個 value=1 的隱藏欄位，
+	 * 但表單是客人自己送的，改成 2 送出，WooCommerce 就照 set_quantity()。一筆預約
+	 * 只鎖了一個人的名額，訂單卻收兩份錢、記兩個數量——兩邊從此對不上。多人要走
+	 * 「報名人數」（uappt_participants），那條路會照人數鎖名額。
+	 *
+	 * 不用 sold_individually：那會讓同一個商品不能同時預約兩個不同的時段。
+	 *
+	 * @param bool   $passed        目前的驗證結果。
+	 * @param string $cart_item_key 購物車項目 key。
+	 * @param array  $values        購物車項目。
+	 * @param int    $quantity      新數量。
+	 * @return bool
+	 */
+	public function reject_quantity_update( $passed, $cart_item_key, $values, $quantity ) {
+		if ( ! empty( $values['uappt_booking_id'] ) && (int) $quantity > 1 ) {
+			wc_add_notice( __( '預約項目每一筆就是一個時段，數量固定為 1。要多人一起預約，請在預約時填「報名人數」。', 'ultimate-appointments' ), 'error' );
+			return false;
+		}
+		return $passed;
+	}
+
+	/**
+	 * 區塊購物車（Store API）的數量上限：預約項目固定 1。
+	 *
+	 * @param mixed      $value     目前的上限。
+	 * @param WC_Product $product   商品。
+	 * @param array|null $cart_item 購物車項目（查商品本身的上限時是 null）。
+	 * @return mixed
+	 */
+	public function store_api_quantity_maximum( $value, $product, $cart_item = null ) {
+		return ( is_array( $cart_item ) && ! empty( $cart_item['uappt_booking_id'] ) ) ? 1 : $value;
+	}
+
+	/**
+	 * 區塊購物車：預約項目的數量欄位不可編輯（跟傳統購物車頁只顯示「1」一致）。
+	 *
+	 * @param bool       $value     目前的設定。
+	 * @param WC_Product $product   商品。
+	 * @param array|null $cart_item 購物車項目。
+	 * @return bool
+	 */
+	public function store_api_quantity_editable( $value, $product, $cart_item = null ) {
+		return ( is_array( $cart_item ) && ! empty( $cart_item['uappt_booking_id'] ) ) ? false : $value;
+	}
+
+	/**
+	 * 最後一道：計算金額之前把預約項目的數量拉回 1。
+	 *
+	 * 上面兩個擋的是已知的入口；其他外掛、自訂 API 直接 set_quantity() 的路徑擋不完。
+	 * 這裡是每次算金額都會經過的地方，直接改 cart_contents（不能呼叫 set_quantity()，
+	 * 它自己會再觸發一次計算，變成遞迴）。
+	 *
+	 * @param WC_Cart $cart 購物車物件。
+	 */
+	public function force_single_quantity( $cart ) {
+		foreach ( $cart->cart_contents as $key => $item ) {
+			if ( ! empty( $item['uappt_booking_id'] ) && (int) $item['quantity'] > 1 ) {
+				$cart->cart_contents[ $key ]['quantity'] = 1;
+			}
+		}
+	}
+
+	/**
 	 * 購物車項目被移除時，釋放對應的暫留。
 	 *
 	 * @param string   $cart_item_key 購物車項目 key。
@@ -559,7 +629,8 @@ class UAPPT_Cart {
 		$removed = isset( $cart->removed_cart_contents[ $cart_item_key ] ) ? $cart->removed_cart_contents[ $cart_item_key ] : null;
 
 		if ( $removed && ! empty( $removed['uappt_booking_id'] ) ) {
-			UAPPT_Booking::release( (int) $removed['uappt_booking_id'] );
+			// 只放掉還是購物車暫留的那一筆，條件在鎖住之後才檢查（v3.4.1）。
+			UAPPT_Booking::release( (int) $removed['uappt_booking_id'], UAPPT_Booking::STATUS_CANCELLED, UAPPT_Booking::RELEASE_IF_CART_HOLD );
 			return;
 		}
 
@@ -653,8 +724,10 @@ class UAPPT_Cart {
 
 		// 跟 on_cart_emptied() 同一條規則：expires_at 為 NULL 代表已經掛上訂單，
 		// 那不是購物車暫留，不能碰。
+		// 這裡的判斷只是省一次交易；真正的條件由 release() 鎖住之後再確認一次（v3.4.1），
+		// 查詢跟釋放之間可能剛好結帳成功。
 		if ( $booking && UAPPT_Booking::STATUS_HELD === $booking['status'] && ! empty( $booking['expires_at'] ) ) {
-			UAPPT_Booking::release( (int) $booking['id'] );
+			UAPPT_Booking::release( (int) $booking['id'], UAPPT_Booking::STATUS_CANCELLED, UAPPT_Booking::RELEASE_IF_CART_HOLD );
 		}
 
 		return $purchasable;
@@ -684,7 +757,7 @@ class UAPPT_Cart {
 
 		// 跟 on_cart_emptied() 同一條規則：掛了訂單的（expires_at 為 NULL）不能碰。
 		if ( $booking && UAPPT_Booking::STATUS_HELD === $booking['status'] && ! empty( $booking['expires_at'] ) ) {
-			UAPPT_Booking::release( $booking_id );
+			UAPPT_Booking::release( $booking_id, UAPPT_Booking::STATUS_CANCELLED, UAPPT_Booking::RELEASE_IF_CART_HOLD );
 		}
 	}
 
@@ -735,7 +808,8 @@ class UAPPT_Cart {
 				continue;
 			}
 
-			UAPPT_Booking::release( (int) $booking['id'] );
+			// 上面是交易外的快速篩選；同樣的條件 release() 鎖住之後會再確認一次。
+			UAPPT_Booking::release( (int) $booking['id'], UAPPT_Booking::STATUS_CANCELLED, UAPPT_Booking::RELEASE_IF_CART_HOLD );
 		}
 	}
 
@@ -881,7 +955,7 @@ class UAPPT_Cart {
 
 			$expires_dt = ! empty( $booking['expires_at'] ) ? date_create( $booking['expires_at'], wp_timezone() ) : null;
 			if ( UAPPT_Booking::STATUS_HELD === $booking['status'] && $expires_dt && $expires_dt->getTimestamp() < time() ) {
-				UAPPT_Booking::release( (int) $booking['id'], UAPPT_Booking::STATUS_EXPIRED );
+				UAPPT_Booking::release( (int) $booking['id'], UAPPT_Booking::STATUS_EXPIRED, UAPPT_Booking::RELEASE_IF_EXPIRED_HOLD );
 				$cart->remove_cart_item( $cart_item_key );
 				wc_add_notice(
 					__( '很抱歉，您預約的時段已逾時釋放，該項目已從購物車移除，請重新選擇時段。', 'ultimate-appointments' ),

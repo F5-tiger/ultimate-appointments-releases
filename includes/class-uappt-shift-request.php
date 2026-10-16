@@ -878,20 +878,6 @@ class UAPPT_Shift_Request {
 		$prev_date = uappt_local_date( $date, '-1 day' );
 		$next_date = uappt_local_date( $date, '+1 day' );
 
-		// 撈當天與前一天（跨午夜的尾巴，跟日檢視同一個做法），kind=any 才看得到
-		// 時段佔用——時段佔用本身刻意不檢查營業時間，落在提案時段外不算硬擋，
-		// 但審核者應該看得到「這個人這天其實還有別的事」。
-		$query = UAPPT_Booking::query(
-			array(
-				'staff_id'  => $staff_id,
-				'date_from' => $prev_date,
-				'date_to'   => $date,
-				'kind'      => 'any',
-				'per_page'  => 500,
-				'order'     => 'ASC',
-			)
-		);
-
 		$day_start_ts = self::local_ts( $date . ' 00:00:00' );
 		$day_end_ts   = self::local_ts( $next_date . ' 00:00:00' );
 
@@ -899,12 +885,25 @@ class UAPPT_Shift_Request {
 		$block_start_ts   = null;
 		$block_end_ts     = null;
 
+		// ⚠️ **這一天的影響範圍不一定在午夜結束**（v3.4.1）。夜班 22:00–02:00 屬於開班
+		// 那一天（owner_date，設計紀律 #7），請這天的假會連隔天凌晨那兩小時一起關掉；
+		// 時段佔用 22:00–01:00 也一樣延伸到隔天。以前只查到午夜為止，隔天 00:30 的
+		// 已確認預約被漏掉，主管可以核准一筆讓它落在下班時間的請假。
+		// 反過來「隔天請假不影響前一天的夜班」不用另外處理：隔天的班不會延伸回這一天。
+		$range_end_ts = $day_end_ts;
+		foreach ( UAPPT_Staff::get_business_windows( $staff, $date ) as $window ) {
+			if ( $window['owner_date'] === $date && $window['close_ts'] > $range_end_ts ) {
+				$range_end_ts = $window['close_ts'];
+			}
+		}
+
 		if ( self::TYPE_BLOCK === $type ) {
 			$block_start_ts = self::local_ts( $date . ' ' . $request['start_hm'] . ':00' );
 			$block_end_ts   = self::local_ts( $date . ' ' . $request['end_hm'] . ':00' );
 			if ( $block_end_ts <= $block_start_ts ) {
 				$block_end_ts += DAY_IN_SECONDS;
 			}
+			$range_end_ts = max( $range_end_ts, $block_end_ts );
 		} else {
 			// hours/leave：假設核准後，這天的營業區間會長怎樣——直接借用
 			// get_business_windows() 的 dry-run 注入口，不另外複製一份解析邏輯。
@@ -926,14 +925,44 @@ class UAPPT_Shift_Request {
 					'override' => $dry_run_override,
 				)
 			);
+
+			// 隔天凌晨的預約要拿「核准後的隔天」來比：這份裡面有這天夜班套用申請之後
+			// 剩下的尾巴，也有隔天自己的班——隔天本來就有上班的時段不該被算成衝突。
+			if ( $range_end_ts > $day_end_ts ) {
+				$proposed_windows = array_merge(
+					$proposed_windows,
+					UAPPT_Staff::get_business_windows(
+						$staff,
+						$next_date,
+						array(
+							'date'     => $date,
+							'override' => $dry_run_override,
+						)
+					)
+				);
+			}
 		}
+
+		// 撈前一天（延伸進今天的夜班尾巴，跟日檢視同一個做法）到影響範圍結束的那一天，
+		// kind=any 才看得到時段佔用——時段佔用本身刻意不檢查營業時間，落在提案時段外
+		// 不算硬擋，但審核者應該看得到「這個人這天其實還有別的事」。
+		$query = UAPPT_Booking::query(
+			array(
+				'staff_id'  => $staff_id,
+				'date_from' => $prev_date,
+				'date_to'   => $range_end_ts > $day_end_ts ? $next_date : $date,
+				'kind'      => 'any',
+				'per_page'  => 500,
+				'order'     => 'ASC',
+			)
+		);
 
 		foreach ( $query['items'] as $booking ) {
 			$b_start = self::local_ts( $booking['service_start'] );
 			$b_end   = self::local_ts( $booking['service_end'] );
 
-			if ( $b_end <= $day_start_ts || $b_start >= $day_end_ts ) {
-				continue; // 跟這一天無關（前一天查回來但沒有跨夜延伸進今天）。
+			if ( $b_end <= $day_start_ts || $b_start >= $range_end_ts ) {
+				continue; // 跟這一天的影響範圍無關。
 			}
 
 			if ( self::TYPE_BLOCK === $type ) {

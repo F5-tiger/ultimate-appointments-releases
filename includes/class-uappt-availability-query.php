@@ -67,7 +67,35 @@ class UAPPT_Availability_Query {
 	 * @return bool
 	 */
 	public static function staff_list_allowed( $product_id ) {
-		return ! self::applies_customer_policy() || UAPPT_Product::staff_choice_enabled( $product_id );
+		if ( ! self::applies_customer_policy() ) {
+			return true;
+		}
+		return self::product_is_public( $product_id ) && UAPPT_Product::staff_choice_enabled( $product_id );
+	}
+
+	/**
+	 * 這個商品客人看得到嗎（v3.4.1）：已發佈，而且不是密碼保護（或客人已經輸入過密碼）。
+	 *
+	 * 反查索引只收已發佈的商品，但人員／時段／日期這幾支是直接收 product_id 的，
+	 * 以前不經過索引：草稿或私人商品只要沒暫停，知道 ID 就查得到它的人員名單、照片、
+	 * 加價與空檔。前台入口一律先過這一關。
+	 *
+	 * 「商品目錄可見度：隱藏」**不算**不公開：預約精靈的建議做法就是把服務商品藏起來、
+	 * 只從 /預約 進來（見 docs/booking-wizard-plan.md D3），它們照樣要能預約。
+	 * 店家自己（manage_woocommerce）不受限，預覽與後台建單照常。
+	 *
+	 * @param int $product_id 商品 ID。
+	 * @return bool
+	 */
+	public static function product_is_public( $product_id ) {
+		if ( ! self::applies_customer_policy() ) {
+			return true;
+		}
+		$post = get_post( (int) $product_id );
+		if ( ! $post || 'product' !== $post->post_type || 'publish' !== $post->post_status ) {
+			return false;
+		}
+		return ! post_password_required( $post );
 	}
 
 	/**
@@ -85,6 +113,10 @@ class UAPPT_Availability_Query {
 	public static function is_blocked( $product_id, $plan_key = '' ) {
 		if ( ! self::applies_customer_policy() ) {
 			return false;
+		}
+
+		if ( ! self::product_is_public( $product_id ) ) {
+			return true;
 		}
 
 		if ( UAPPT_Product::is_paused( $product_id ) ) {
@@ -155,8 +187,10 @@ class UAPPT_Availability_Query {
 		}
 
 		// 這天額滿（沒有任何時段）時才往後找最近可預約日，平常不用多花這次查詢。
+		// ⚠️ 要沿用同一位指定人員（v3.4.1）：以前漏傳，變成「任何人有空的下一天」，
+		// 客人指定 A、照著提示切過去，又沒有 A 的時段。
 		$next_available = empty( $slots )
-			? UAPPT_Booking::find_next_available_date( $product_id, $plan_key, $date_ymd )
+			? UAPPT_Booking::find_next_available_date( $product_id, $plan_key, $date_ymd, $staff_id )
 			: null;
 
 		$settings       = UAPPT_Product::get_booking_settings( $product_id, $plan_key );

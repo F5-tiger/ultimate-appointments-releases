@@ -78,18 +78,18 @@ class UAPPT_Order {
 
 		foreach ( $results as $result ) {
 			if ( ! $result['ok'] ) {
-				$order->add_order_note(
-					sprintf(
-						/* translators: %d: 預約紀錄 ID */
-						__( '⚠️ 預約時段確認失敗：原本鎖定的時段（預約 #%d）已逾時釋放並被其他訂單搶走，客人已完成付款但目前沒有對應時段，請盡快聯繫客人協調改期或退款。', 'ultimate-appointments' ),
-						$result['old_booking_id']
-					)
-				);
+				$order->add_order_note( self::failure_note( $result ) );
 				continue;
 			}
 
 			if ( $result['relocked'] ) {
 				$this->update_order_item_booking_meta( $order, $result['old_booking_id'], $result['booking_id'] );
+
+				// 重複的付款通知：早就補鎖過、備註也寫過了，只確保訂單項目指到新的那一筆。
+				if ( ! empty( $result['already'] ) ) {
+					continue;
+				}
+
 				$order->add_order_note(
 					sprintf(
 						/* translators: %d: 新預約紀錄 ID */
@@ -99,6 +99,35 @@ class UAPPT_Order {
 				);
 			}
 		}
+	}
+
+	/**
+	 * 確認／補鎖失敗時的訂單備註，依 UAPPT_Booking::confirm_or_relock() 給的原因（v3.4.1）。
+	 *
+	 * 以前不管原因一律寫「被其他訂單搶走」，資料庫寫入失敗也這樣講，店家照著去跟客人
+	 * 協調改期，其實時段還在、只是狀態沒寫進去。
+	 *
+	 * @param array $result confirm_or_relock() 的一筆結果。
+	 * @return string
+	 */
+	protected static function failure_note( $result ) {
+		$id     = (int) $result['old_booking_id'];
+		$reason = isset( $result['reason'] ) ? (string) $result['reason'] : '';
+
+		switch ( $reason ) {
+			case 'confirm_failed':
+				/* translators: %d: 預約紀錄 ID */
+				return sprintf( __( '⚠️ 預約時段確認失敗：客人已完成付款，但把預約 #%d 改成「已確認」時資料庫寫入失敗，它目前仍是暫留狀態。請到預約列表確認，把訂單狀態重新存一次會再試一次。', 'ultimate-appointments' ), $id );
+			case 'busy':
+				/* translators: %d: 預約紀錄 ID */
+				return sprintf( __( '⚠️ 預約 #%d 正在被另一個付款處理重新鎖定，這次沒有重複處理。請稍後到預約列表確認這張訂單的預約是否已經確認。', 'ultimate-appointments' ), $id );
+			case 'missing':
+				/* translators: %d: 預約紀錄 ID */
+				return sprintf( __( '⚠️ 預約時段確認失敗：找不到預約 #%d，客人已完成付款但目前沒有對應的預約紀錄，請盡快聯繫客人。', 'ultimate-appointments' ), $id );
+		}
+
+		/* translators: %d: 預約紀錄 ID */
+		return sprintf( __( '⚠️ 預約時段確認失敗：原本鎖定的時段（預約 #%d）已逾時釋放並被其他訂單搶走（或剩餘名額不足以容納原本的報名人數），客人已完成付款但目前沒有對應時段，請盡快聯繫客人協調改期或退款。', 'ultimate-appointments' ), $id );
 	}
 
 	/**

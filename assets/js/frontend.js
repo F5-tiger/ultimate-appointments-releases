@@ -282,7 +282,12 @@
 			return UAPPT_Frontend.i18n.select_date;
 		}
 
+		// 時段請求的序號（v3.4.1）：快速換日期／方案／人員時，較早送出的請求可能比較晚
+		// 回來，把畫面蓋成舊日期的時段——客人點下去就是「新日期＋舊時間」。只認最新那一次。
+		var slotsSeq = 0;
+
 		function loadSlots() {
+			var seq = ++slotsSeq;
 			resetSelection();
 			lastResponse = null;
 			activeSegment = null;
@@ -316,6 +321,9 @@
 				},
 			} )
 				.done( function ( response ) {
+					if ( seq !== slotsSeq ) {
+						return;
+					}
 					if ( response && response.success ) {
 						lastResponse = response.data;
 						renderResponse();
@@ -327,6 +335,9 @@
 					}
 				} )
 				.fail( function () {
+					if ( seq !== slotsSeq ) {
+						return;
+					}
 					lastResponse = null;
 					renderMessage( UAPPT_Frontend.i18n.error );
 				} );

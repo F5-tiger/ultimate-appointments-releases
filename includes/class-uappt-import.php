@@ -164,7 +164,13 @@ class UAPPT_Import {
 				if ( ! $key ) {
 					continue;
 				}
-				$row[ $key ] = isset( $data[ $index ] ) ? trim( (string) $data[ $index ] ) : '';
+				$cell = isset( $data[ $index ] ) ? trim( (string) $data[ $index ] ) : '';
+				// 匯出時 UAPPT_Admin::csv_cell() 在公式字元前補的單引號，匯回來要拿掉，
+				// 「匯出 → 改 → 匯回」才不會每來回一次就多一個字。
+				if ( preg_match( "/^'[=+\\-@\\t\\r]/", $cell ) ) {
+					$cell = substr( $cell, 1 );
+				}
+				$row[ $key ] = $cell;
 			}
 			$rows[] = $row;
 

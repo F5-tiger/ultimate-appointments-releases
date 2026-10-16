@@ -420,7 +420,7 @@ class UAPPT_Staff {
 			//
 			// 先比對再重鋪：重鋪是幾百列的刪除與寫入，每次存檔（改個電話、調個
 			// 排序）都跑一次太浪費。
-			$before      = $wpdb->get_row( $wpdb->prepare( "SELECT business_hours, is_24h, schedule_mode FROM {$table} WHERE id = %d", $staff_id ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+			$before      = $wpdb->get_row( $wpdb->prepare( "SELECT business_hours, is_24h, schedule_mode, slot_interval FROM {$table} WHERE id = %d", $staff_id ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
 			$before_mode = $before ? self::sanitize_schedule_mode( $before['schedule_mode'] ) : '';
 			$to_flex     = '' !== $schedule_mode && self::MODE_FLEX === $schedule_mode && self::MODE_FLEX !== $before_mode;
 			$needs_rebuild = ! $before
@@ -429,6 +429,21 @@ class UAPPT_Staff {
 				|| ( '' !== $schedule_mode && $schedule_mode !== $before_mode );
 
 			$wpdb->update( $table, $fields, array( 'id' => $staff_id ), self::formats_for( $fields, $field_formats ), array( '%d' ) ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+
+			// 實際生效的時間格間距變了（自己的值，或改成／改回沿用全域）：把還沒結束的佔用
+			// 搬到新格子上，見 UAPPT_Booking::regrid_staff()（v3.4.1）。先存設定再搬：存檔
+			// 之後才建立的預約已經用新間距，搬的時候自然會略過它們。搬不成就把間距改回去，
+			// 不留「設定改了、格子沒搬」的半套狀態。
+			$global_interval = max( 5, (int) get_option( 'uappt_slot_interval_minutes', 15 ) );
+			$before_interval = ( $before && ! empty( $before['slot_interval'] ) ) ? max( 5, (int) $before['slot_interval'] ) : $global_interval;
+			$after_interval  = $slot_interval ? $slot_interval : $global_interval;
+			if ( $before && $before_interval !== $after_interval ) {
+				$regrid = UAPPT_Booking::regrid_staff( array( $staff_id ), $after_interval );
+				if ( is_wp_error( $regrid ) ) {
+					$wpdb->update( $table, array( 'slot_interval' => empty( $before['slot_interval'] ) ? null : (int) $before['slot_interval'] ), array( 'id' => $staff_id ), array( '%d' ), array( '%d' ) ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+					return new WP_Error( 'uappt_regrid_failed', __( '其他欄位已經存好，但搬移既有預約的時間格時發生錯誤，「時段間距」維持原本的設定，請稍後再試一次。', 'ultimate-appointments' ) );
+				}
+			}
 
 			if ( $to_flex ) {
 				// 固定 → 彈性：**先**把樣板鋪好的未來改標成手動，再讓下面的重鋪跑。

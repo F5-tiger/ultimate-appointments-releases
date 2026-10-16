@@ -2540,6 +2540,52 @@ class UAPPT_Admin {
 	 * @param array $payment_errors 收款方式的清洗錯誤。
 	 * @return string 通知代碼。
 	 */
+	/**
+	 * 存全域時間格間距；有變的話把沿用全域的人員的佔用搬到新格子上（v3.4.1）。
+	 *
+	 * 先存設定、再搬：存檔之後才建立的預約已經用新間距，搬的時候自然會略過。搬不成
+	 * 就把設定改回去，不留「間距改了、格子沒搬」的半套狀態——那正是會超賣的狀態。
+	 *
+	 * @param int $new_interval 新的間距（分鐘）。
+	 * @return string 錯誤訊息；成功或沒有變更時回傳空字串。
+	 */
+	protected static function save_global_slot_interval( $new_interval ) {
+		global $wpdb;
+
+		$old_interval = max( 5, (int) get_option( 'uappt_slot_interval_minutes', 15 ) );
+		if ( $old_interval === $new_interval ) {
+			return '';
+		}
+
+		$bookings = UAPPT_Install::table( 'bookings' );
+		$staff    = UAPPT_Install::table( 'staff' );
+
+		// 很舊的紀錄可能沒有存 grid_interval，釋放時一律退回「當下的全域間距」。全域一改，
+		// 那些紀錄就會用錯的間距還格子——先把它們蓋上「到目前為止用的值」，語意不變。
+		$wpdb->query( // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+			$wpdb->prepare(
+				"UPDATE {$bookings} SET grid_interval = %d WHERE ( grid_interval IS NULL OR grid_interval = 0 ) AND status IN (%s, %s)", // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+				$old_interval,
+				UAPPT_Booking::STATUS_HELD,
+				UAPPT_Booking::STATUS_CONFIRMED
+			)
+		);
+
+		update_option( 'uappt_slot_interval_minutes', $new_interval );
+
+		// 沿用全域間距的人員，佔用要搬到新格子上（見 UAPPT_Booking::regrid_staff()）。
+		// 自己設了間距的人員不受影響。
+		$staff_ids = $wpdb->get_col( "SELECT id FROM {$staff} WHERE slot_interval IS NULL OR slot_interval = 0" ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+		$regrid    = UAPPT_Booking::regrid_staff( array_map( 'intval', $staff_ids ), $new_interval );
+
+		if ( is_wp_error( $regrid ) ) {
+			update_option( 'uappt_slot_interval_minutes', $old_interval );
+			return __( '其他設定已經存好，但搬移既有預約的時間格時發生錯誤，「時段間距」維持原本的設定，請稍後再試一次。', 'ultimate-appointments' );
+		}
+
+		return '';
+	}
+
 	protected static function settings_saved_notice( array $segment_errors, array $payment_errors ) {
 		// 兩組以上同時出錯就給一則**不點名**的合併訊息。來源從兩個變三個之後，
 		// 「時段分類與收款方式都有填錯」這種點名的寫法就會漏講第三個——而通知
@@ -2884,7 +2930,7 @@ class UAPPT_Admin {
 						)
 					);
 				}
-				fputcsv( $out, $row );
+				fputcsv( $out, array_map( array( __CLASS__, 'csv_cell' ), $row ) );
 			}
 		} else {
 			// 逐日調整只匯出「今天以後」的：過去的班表改了也沒有意義，全部倒
@@ -2896,9 +2942,10 @@ class UAPPT_Admin {
 					// 系列刻意不做 hydrate），跟 staff-edit.php 一樣自己解一次。
 					$ranges = ! empty( $override['hours'] ) ? json_decode( $override['hours'], true ) : array();
 					$ranges = is_array( $ranges ) ? $ranges : array();
+					// 備註可能是員工從前台排班申請自己填的（staff_note），一樣要防公式。
 					fputcsv(
 						$out,
-						array(
+						array_map( array( __CLASS__, 'csv_cell' ), array(
 							$staff['id'],
 							$staff['name'],
 							$override['override_date'],
@@ -2918,7 +2965,7 @@ class UAPPT_Admin {
 								)
 							),
 							isset( $override['note'] ) ? $override['note'] : '',
-						)
+						) )
 					);
 				}
 			}
@@ -5907,9 +5954,30 @@ class UAPPT_Admin {
 			$value = isset( $row[ $field ] ) ? $row[ $field ] : '';
 			// CSV 要的是可以直接算的原始數字，不是畫面上那種 "68.4%"。
 			// 比率欄位在畫面上會被格式化，這裡維持小數。
-			$line[] = is_float( $value ) ? round( $value, 4 ) : $value;
+			$line[] = is_float( $value ) ? round( $value, 4 ) : self::csv_cell( $value );
 		}
 		return $line;
+	}
+
+	/**
+	 * CSV 的一格：文字開頭是試算表的公式字元時，前面補一個單引號（v3.4.1）。
+	 *
+	 * 報表裡有客人姓名、電話，那是客人自己在結帳時填的。名字填成 `=HYPERLINK(...)`、
+	 * `+cmd|...` 這類字串，管理者用 Excel／Google 試算表打開匯出檔就會被當成公式執行。
+	 * fputcsv() 只處理 CSV 的結構（逗號、引號），不管這個。
+	 *
+	 * 補單引號是試算表通用的「這格是文字」標記，畫面上不會顯示。純數字（含負數）
+	 * 不動，不然金額欄會變成文字、不能加總。匯入時 UAPPT_Import::read_csv() 會把
+	 * 這個單引號拿掉，匯入範本「匯出 → 改 → 匯回」才不會多一個字。
+	 *
+	 * @param mixed $value 值。
+	 * @return mixed
+	 */
+	public static function csv_cell( $value ) {
+		if ( ! is_string( $value ) || '' === $value || is_numeric( $value ) ) {
+			return $value;
+		}
+		return preg_match( '/^[=+\-@\t\r]/', $value ) ? "'" . $value : $value;
 	}
 
 	/**
@@ -7005,8 +7073,9 @@ class UAPPT_Admin {
 			}
 		}
 
+		// 不帶參數＝含已停用的人員：招待是當時那個人做的，停用後名稱仍要對得上。
 		$staff_names = array();
-		foreach ( UAPPT_Staff::get_all( array( 'include_inactive' => true ) ) as $row ) {
+		foreach ( UAPPT_Staff::get_all() as $row ) {
 			$staff_names[ (int) $row['id'] ] = $row['name'];
 		}
 
@@ -7090,8 +7159,10 @@ class UAPPT_Admin {
 	protected function build_commission_report( $date_from, $date_to, $staff_id = 0 ) {
 		$monthly = UAPPT_Booking::get_monthly_staff_revenue( $date_from, $date_to, $staff_id );
 
+		// 不帶參數＝含已停用的人員。停用前的業績照樣要抽成；v3.4.0 以前誤傳陣列
+		// （非空陣列為真＝只取啟用中），已停用的人整列消失、合計偏低。
 		$staff = array();
-		foreach ( UAPPT_Staff::get_all( array( 'include_inactive' => true ) ) as $row ) {
+		foreach ( UAPPT_Staff::get_all() as $row ) {
 			$staff[ (int) $row['id'] ] = $row;
 		}
 
@@ -8613,7 +8684,7 @@ class UAPPT_Admin {
 		check_admin_referer( 'uappt_save_settings' );
 
 		update_option( 'uappt_hold_minutes', isset( $_POST['hold_minutes'] ) ? max( 1, absint( $_POST['hold_minutes'] ) ) : 15 );
-		update_option( 'uappt_slot_interval_minutes', isset( $_POST['slot_interval_minutes'] ) ? max( 5, absint( $_POST['slot_interval_minutes'] ) ) : 15 );
+		$interval_error = self::save_global_slot_interval( isset( $_POST['slot_interval_minutes'] ) ? max( 5, absint( $_POST['slot_interval_minutes'] ) ) : 15 );
 		update_option( 'uappt_booking_horizon_days', isset( $_POST['booking_horizon_days'] ) ? max( 1, absint( $_POST['booking_horizon_days'] ) ) : 30 );
 
 		// 公休日。⚠️ 這裡跟其他 option 一樣是**無條件寫入**——欄位沒送上來就等於
@@ -8695,6 +8766,14 @@ class UAPPT_Admin {
 		$page_mode = isset( $_POST['product_page_mode'] ) ? sanitize_key( wp_unslash( $_POST['product_page_mode'] ) ) : 'classic';
 		update_option( 'uappt_product_page_mode', in_array( $page_mode, array( 'classic', 'wizard', 'intro' ), true ) ? $page_mode : 'classic' );
 		update_option( 'uappt_booking_page_id', isset( $_POST['booking_page_id'] ) ? absint( $_POST['booking_page_id'] ) : 0 );
+
+		if ( '' !== $interval_error ) {
+			$this->redirect_with_error(
+				'uappt-settings',
+				$interval_error,
+				array( 'tab' => self::sanitize_settings_tab( isset( $_POST['uappt_tab'] ) ? wp_unslash( $_POST['uappt_tab'] ) : '' ) )
+			);
+		}
 
 		// 帶著頁籤一起轉址回去：不然在「通知提醒」改完按儲存，會被丟回第一個
 		// 頁籤，還要自己再點一次才看得到剛剛改的東西。

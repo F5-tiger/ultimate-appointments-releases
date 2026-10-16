@@ -82,6 +82,15 @@ class UAPPT_Wizard {
 				// 「方案」那格——不然沒在用方案的店家，每一次都會看到一格最後
 				// 一定被跳過的步驟。
 				'multiPlan'   => self::has_multi_plan_product(),
+				// 確認頁要自己算「方案價 × 人數 ＋ 指定加價」再格式化（v3.4.1），
+				// 照 WooCommerce 的貨幣設定，不要在 JS 裡寫死 NT$。
+				'currency'    => array(
+					'symbol'   => html_entity_decode( get_woocommerce_currency_symbol(), ENT_QUOTES, 'UTF-8' ),
+					'decimals' => wc_get_price_decimals(),
+					'decimal'  => wc_get_price_decimal_separator(),
+					'thousand' => wc_get_price_thousand_separator(),
+					'format'   => html_entity_decode( get_woocommerce_price_format(), ENT_QUOTES, 'UTF-8' ),
+				),
 				'weekdays' => array(
 					__( '日', 'ultimate-appointments' ),
 					__( '一', 'ultimate-appointments' ),
@@ -124,6 +133,11 @@ class UAPPT_Wizard {
 					'summaryService' => __( '服務項目', 'ultimate-appointments' ),
 					'summaryTime'    => __( '預約時間', 'ultimate-appointments' ),
 					'total'          => __( '合計', 'ultimate-appointments' ),
+					'participants'   => __( '報名人數', 'ultimate-appointments' ),
+					/* translators: %d: 人數 */
+					'people'         => __( '%d 人', 'ultimate-appointments' ),
+					'fewer'          => __( '減少人數', 'ultimate-appointments' ),
+					'more'           => __( '增加人數', 'ultimate-appointments' ),
 					// 這一行要跟著「送出後去哪一頁」的設定走，不然客人會被騙一次。
 					// 走購物車時順便把好處講出來——多出來的那一步才會被當成
 					// 「可以折點數」而不是「又要多按一次」。

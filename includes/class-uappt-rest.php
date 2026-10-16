@@ -25,6 +25,11 @@ class UAPPT_Rest {
 	const NAMESPACE_V1 = 'uappt/v1';
 
 	/**
+	 * /days 一次最多查幾天（v3.4.1，見 get_days()）。
+	 */
+	const MAX_DAY_RANGE = 62;
+
+	/**
 	 * 掛上路由註冊。
 	 */
 	public static function init() {
@@ -333,6 +338,15 @@ class UAPPT_Rest {
 			$to = uappt_local_date( $from, '+13 days' );
 		}
 
+		// ⚠️ **範圍要在任何分支之前驗**（v3.4.1）。這是免登入的端點，以前 from／to 沒有
+		// 上限：2020 到 2030 年就是一次算 4,000 天，暫停接單的分支甚至在驗日期格式之前
+		// 就逐日組結果。前台實際只會查一個月（精靈一次一個月、商品頁月曆前後各多 7 天），
+		// 上限給 62 天綽綽有餘。
+		$range_error = self::validate_day_range( $from, $to );
+		if ( is_wp_error( $range_error ) ) {
+			return $range_error;
+		}
+
 		// 暫停接單／方案停用時，整段區間一律當作沒有位——跟 /slots 回空時段
 		// 是同一個政策，不能只擋其中一個入口。
 		if ( UAPPT_Availability_Query::is_blocked( $product_id, $plan_key ) ) {
@@ -352,6 +366,35 @@ class UAPPT_Rest {
 		}
 
 		return rest_ensure_response( array( 'days' => $days ) );
+	}
+
+	/**
+	 * /days 的日期區間檢查：真實存在的日期、起訖順序、最多 MAX_DAY_RANGE 天。
+	 *
+	 * @param string $from 起始日期。
+	 * @param string $to   結束日期。
+	 * @return true|WP_Error
+	 */
+	protected static function validate_day_range( $from, $to ) {
+		$from_dt = preg_match( '/^\d{4}-\d{2}-\d{2}$/', $from ) ? date_create_immutable( $from, wp_timezone() ) : false;
+		$to_dt   = preg_match( '/^\d{4}-\d{2}-\d{2}$/', $to ) ? date_create_immutable( $to, wp_timezone() ) : false;
+
+		// date_create 會把 2026-02-31 默默改成 3 月 3 日，要比對回去才算真的日期。
+		if ( ! $from_dt || ! $to_dt || $from_dt->format( 'Y-m-d' ) !== $from || $to_dt->format( 'Y-m-d' ) !== $to ) {
+			return new WP_Error( 'uappt_invalid_date', __( '日期格式錯誤。', 'ultimate-appointments' ), array( 'status' => 400 ) );
+		}
+		if ( $from > $to ) {
+			return new WP_Error( 'uappt_invalid_range', __( '日期區間的起訖顛倒了。', 'ultimate-appointments' ), array( 'status' => 400 ) );
+		}
+		if ( (int) $from_dt->diff( $to_dt )->days + 1 > self::MAX_DAY_RANGE ) {
+			return new WP_Error(
+				'uappt_range_too_long',
+				/* translators: %d: 最多幾天 */
+				sprintf( __( '一次最多只能查 %d 天。', 'ultimate-appointments' ), self::MAX_DAY_RANGE ),
+				array( 'status' => 400 )
+			);
+		}
+		return true;
 	}
 
 	/**

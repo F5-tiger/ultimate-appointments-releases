@@ -93,6 +93,7 @@
 				return;
 			}
 
+			var seq = ++staffSeq;
 			var target = parseTarget();
 			var currentValue = $staff.val();
 
@@ -116,6 +117,10 @@
 				},
 			} )
 				.done( function ( response ) {
+					// 快速換服務項目時，舊商品的人員清單晚回來不能蓋掉新的（同上面時段的道理）。
+					if ( seq !== staffSeq ) {
+						return;
+					}
 					$staff.empty().append( $( '<option/>', { value: '0', text: UAPPT_Admin_Booking.i18n.staff_any } ) );
 
 					var list = ( response && response.success && response.data.staff ) ? response.data.staff : [];
@@ -134,13 +139,20 @@
 					}
 				} )
 				.always( function () {
-					if ( callback ) {
+					if ( callback && seq === staffSeq ) {
 						callback();
 					}
 				} );
 		}
 
+		// 請求序號（v3.4.1）：快速換日期時，較早的請求晚回來會把**送出用的隱藏日期與
+		// 時間**寫回舊值——畫面上的日期是 10/21，實際送出的卻是 10/20 10:00，而那個組合
+		// 可能完全合法，後端擋不下來。只認最新那一次的回應。
+		var slotsSeq = 0;
+		var staffSeq = 0;
+
 		function loadSlots() {
+			var seq = ++slotsSeq;
 			var target = parseTarget();
 			var date = $date.val();
 
@@ -165,6 +177,9 @@
 				},
 			} )
 				.done( function ( response ) {
+					if ( seq !== slotsSeq ) {
+						return;
+					}
 					if ( ! response || ! response.success || ! response.data.slots || ! response.data.slots.length ) {
 						resetSlot( UAPPT_Admin_Booking.i18n.no_slots );
 						return;
@@ -184,6 +199,9 @@
 					$timeInput.val( $slot.val() );
 				} )
 				.fail( function () {
+					if ( seq !== slotsSeq ) {
+						return;
+					}
 					resetSlot( UAPPT_Admin_Booking.i18n.error );
 				} );
 		}
