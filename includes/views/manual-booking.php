@@ -111,7 +111,7 @@ $max_date     = uappt_local_date( $min_date, "+{$horizon_days} days" );
 						// 能不能被 resolve 到會依 select2 版本而異，這裡是功能相依而
 						// 不是裝飾，維持現狀最保險。
 						?>
-						<select id="uappt-mb-customer" name="customer_id" class="wc-customer-search" style="width: 400px;" data-placeholder="<?php esc_attr_e( '輸入姓名、電話或 Email 搜尋會員…', 'ultimate-appointments' ); ?>" data-allow_clear="true"></select>
+						<select id="uappt-mb-customer" name="customer_id" class="uappt-customer-search" style="width: 400px;" data-placeholder="<?php esc_attr_e( '輸入姓名、電話或 Email 搜尋會員…', 'ultimate-appointments' ); ?>" data-allow_clear="true"></select>
 						<p class="description"><?php esc_html_e( '綁定會員後，這張訂單會出現在該會員的消費紀錄裡，也才會依會員制度累積點數。選定後下面的姓名/電話會自動帶入，仍可手動修改。客人還沒有帳號的話，這欄留空即可，跟現在一樣只用姓名電話建立。不會因此寄送訂單通知信給客人。', 'ultimate-appointments' ); ?></p>
 					</td>
 				</tr>

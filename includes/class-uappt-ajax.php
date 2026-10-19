@@ -41,6 +41,7 @@ class UAPPT_Ajax {
 		add_action( 'wp_ajax_uappt_get_staff_options', array( $this, 'get_staff_options' ) );
 		add_action( 'wp_ajax_nopriv_uappt_get_staff_options', array( $this, 'get_staff_options' ) );
 		add_action( 'wp_ajax_uappt_get_customer', array( $this, 'get_customer' ) );
+		add_action( 'wp_ajax_uappt_search_customers', array( $this, 'search_customers' ) );
 	}
 
 	/**
@@ -122,7 +123,7 @@ class UAPPT_Ajax {
 	public function get_customer() {
 		check_ajax_referer( 'uappt_slots_nonce', 'nonce' );
 
-		if ( ! current_user_can( 'manage_woocommerce' ) ) {
+		if ( ! current_user_can( UAPPT_Caps::CAP_MANAGE_BOOKINGS ) ) {
 			wp_send_json_error( array( 'message' => __( '權限不足。', 'ultimate-appointments' ) ), 403 );
 		}
 
@@ -132,7 +133,7 @@ class UAPPT_Ajax {
 		}
 
 		$customer = new WC_Customer( $customer_id );
-		if ( ! $customer->get_id() ) {
+		if ( ! $customer->get_id() || ! is_user_member_of_blog( $customer_id ) ) {
 			wp_send_json_error( array( 'message' => __( '找不到此會員。', 'ultimate-appointments' ) ), 404 );
 		}
 
@@ -148,5 +149,41 @@ class UAPPT_Ajax {
 				'email' => $customer->get_email(),
 			)
 		);
+	}
+
+	/**
+	 * 建單頁會員搜尋：沿用 WooCommerce 資料儲存層，採預約管理權限。
+	 * 不授予整套訂單編輯權限、不掛匿名入口；短查詢也有固定筆數上限。
+	 */
+	public function search_customers() {
+		check_ajax_referer( 'uappt_slots_nonce', 'nonce' );
+		if ( ! current_user_can( UAPPT_Caps::CAP_MANAGE_BOOKINGS ) ) {
+			wp_send_json_error( array( 'message' => __( '權限不足。', 'ultimate-appointments' ) ), 403 );
+		}
+		$term = isset( $_GET['term'] ) ? sanitize_text_field( wp_unslash( $_GET['term'] ) ) : '';
+		if ( '' === $term || ! class_exists( 'WC_Data_Store' ) || ! class_exists( 'WC_Customer' ) ) {
+			wp_send_json( array( 'results' => array() ) );
+		}
+		$ids = WC_Data_Store::load( 'customer' )->search_customers( $term, 20 );
+		if ( ctype_digit( $term ) && is_user_member_of_blog( (int) $term ) ) {
+			array_unshift( $ids, (int) $term );
+		}
+		$results = array();
+		foreach ( array_slice( array_unique( array_map( 'absint', $ids ) ), 0, 20 ) as $id ) {
+			if ( ! is_user_member_of_blog( $id ) ) {
+				continue;
+			}
+			$customer = new WC_Customer( $id );
+			if ( ! $customer->get_id() ) {
+				continue;
+			}
+			$name = trim( $customer->get_first_name() . ' ' . $customer->get_last_name() );
+			$results[] = array(
+				'id'   => $id,
+				// 純文字交由 SelectWoo 預設跳脫，不能使用 escapeMarkup 原樣輸出。
+				'text' => sprintf( '%s (#%d – %s)', $name ? $name : $customer->get_display_name(), $id, $customer->get_email() ),
+			);
+		}
+		wp_send_json( array( 'results' => $results ) );
 	}
 }

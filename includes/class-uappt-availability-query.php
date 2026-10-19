@@ -28,12 +28,12 @@ class UAPPT_Availability_Query {
 	 *
 	 * 後台（手動建立預約、換人）跟前台共用這些查詢，但客服本來就需要能看到
 	 * 完整名單、能幫客人排暫停接單的商品——那是店家自己的決定。所以有
-	 * manage_woocommerce 的人一律不受這些政策限制。
+	 * uappt_manage_bookings 的人不受這些政策限制，與後台寫入權限一致。
 	 *
 	 * @return bool
 	 */
 	protected static function applies_customer_policy() {
-		return ! current_user_can( 'manage_woocommerce' );
+		return ! current_user_can( UAPPT_Caps::CAP_MANAGE_BOOKINGS );
 	}
 
 	/**
@@ -82,7 +82,7 @@ class UAPPT_Availability_Query {
 	 *
 	 * 「商品目錄可見度：隱藏」**不算**不公開：預約精靈的建議做法就是把服務商品藏起來、
 	 * 只從 /預約 進來（見 docs/booking-wizard-plan.md D3），它們照樣要能預約。
-	 * 店家自己（manage_woocommerce）不受限，預覽與後台建單照常。
+	 * 預約管理者（uappt_manage_bookings）不受限，預覽與後台建單照常。
 	 *
 	 * @param int $product_id 商品 ID。
 	 * @return bool

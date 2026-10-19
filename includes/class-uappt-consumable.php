@@ -15,7 +15,7 @@
  *    同一個設計哲學，設計紀律 #4），帳不符時用 `recalculate_stock()` 重算。
  *
  * 2. **扣帳點是「服務完成」，還原時必須配對回沖。** 耗材是真的做了才用掉，
- *    所以扣在 `UAPPT_Booking::complete()` 成功之後；`no_show` 不扣（人沒來就
+ *    所以與 `UAPPT_Booking::complete()` 的狀態一併提交；`no_show` 不扣（人沒來就
  *    沒用到）。⚠️ `revert_to_confirmed()` 一定要呼叫 `revert_for_booking()`，
  *    漏掉的話每還原一次庫存就少一份，而且沒有任何地方會報錯。
  *
@@ -255,6 +255,41 @@ class UAPPT_Consumable {
 	 * ------------------------------------------------------------------- */
 
 	/**
+	 * 耗材異動可以獨立交易，也可以參與預約狀態的同一筆交易。
+	 *
+	 * MySQL 的 START TRANSACTION 會隱含提交前一筆交易，不能把逐項扣帳當成
+	 * 可巢狀的交易。參與外層交易時只回傳結果，提交與回滾一律交給擁有者。
+	 *
+	 * @param callable $callback       交易內容。
+	 * @param bool     $in_transaction 呼叫端已開交易並持有必要的預約列鎖。
+	 * @return mixed|WP_Error
+	 */
+	private static function with_transaction( $callback, $in_transaction = false ) {
+		global $wpdb;
+		if ( $in_transaction ) {
+			return $callback();
+		}
+		if ( false === $wpdb->query( 'START TRANSACTION' ) ) { // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+			return new WP_Error( 'uappt_move_transaction_failed', __( '無法開始耗材異動，請稍後再試。', 'ultimate-appointments' ) );
+		}
+		try {
+			$result = $callback();
+			if ( is_wp_error( $result ) ) {
+				$wpdb->query( 'ROLLBACK' ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+				return $result;
+			}
+			if ( false === $wpdb->query( 'COMMIT' ) ) { // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+				$wpdb->query( 'ROLLBACK' ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+				return new WP_Error( 'uappt_move_commit_failed', __( '儲存耗材異動時發生錯誤，請重新確認後再試。', 'ultimate-appointments' ) );
+			}
+			return $result;
+		} catch ( Throwable $error ) {
+			$wpdb->query( 'ROLLBACK' ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+			throw $error;
+		}
+	}
+
+	/**
 	 * 寫一筆異動，並同步結存快照。**所有庫存變動的唯一入口。**
 	 *
 	 * 在交易裡用 `SELECT ... FOR UPDATE` 鎖住那一列再算新結存：兩筆預約同時
@@ -270,6 +305,7 @@ class UAPPT_Consumable {
 	 *     @type int    $staff_id   關聯的人員 ID。
 	 *     @type string $note       備註。
 	 *     @type int    $created_by 操作者；預設目前登入者。
+	 *     @type bool   $in_transaction 呼叫端已持有交易；本方法只寫入，不提交或回滾。
 	 *     @type float  $set_to     盤點用：把結存校正成這個數字，$qty 由鎖住之後讀到的帳面算出
 	 *                              （傳進來的 $qty 不看）。差額是 0 就回 WP_Error。
 	 *     @type float|null $cost_total 指定這筆的成本快照（回沖用，v3.4.1）。有這個 key 就不看耗材
@@ -294,89 +330,91 @@ class UAPPT_Consumable {
 			return new WP_Error( 'uappt_consumable_zero_qty', __( '異動數量是 0，沒有東西可以記錄。', 'ultimate-appointments' ) );
 		}
 
-		$table       = UAPPT_Install::table( 'consumables' );
-		$moves_table = UAPPT_Install::table( 'consumable_moves' );
+		return self::with_transaction(
+			static function () use ( $wpdb, $consumable_id, $type, $qty, $set_to, $args ) {
+				$table       = UAPPT_Install::table( 'consumables' );
+				$moves_table = UAPPT_Install::table( 'consumable_moves' );
 
-		$wpdb->query( 'START TRANSACTION' ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+				$row = $wpdb->get_row( $wpdb->prepare( "SELECT id, stock, unit_cost FROM {$table} WHERE id = %d FOR UPDATE", $consumable_id ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+				if ( ! $row ) {
+					return new WP_Error( 'uappt_consumable_missing', __( '找不到這筆耗材。', 'ultimate-appointments' ) );
+				}
 
-		$row = $wpdb->get_row( $wpdb->prepare( "SELECT id, stock, unit_cost FROM {$table} WHERE id = %d FOR UPDATE", $consumable_id ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
-		if ( ! $row ) {
-			$wpdb->query( 'ROLLBACK' ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
-			return new WP_Error( 'uappt_consumable_missing', __( '找不到這筆耗材。', 'ultimate-appointments' ) );
-		}
+				// 盤點：差額要用鎖住之後的帳面算（v3.0.2）。以前是交易外先讀帳面再算差額，盤點
+				// 當下剛好有預約被標完成的話，那筆扣用會被這次校正抵銷掉。
+				if ( null !== $set_to ) {
+					$qty = round( $set_to - (float) $row['stock'], 3 );
+					if ( 0.0 === $qty ) {
+						return new WP_Error( 'uappt_consumable_no_diff', __( '盤點數量跟帳面一樣，沒有差額要校正。', 'ultimate-appointments' ) );
+					}
+					if ( empty( $args['note'] ) ) {
+						$args['note'] = sprintf(
+							/* translators: 1: 帳面數量 2: 實際盤點數量 */
+							__( '盤點校正：帳面 %1$s → 實際 %2$s', 'ultimate-appointments' ),
+							self::format_qty( $row['stock'] ),
+							self::format_qty( $set_to )
+						);
+					}
+				}
 
-		// 盤點：差額要用鎖住之後的帳面算（v3.0.2）。以前是交易外先讀帳面再算差額，盤點
-		// 當下剛好有預約被標完成的話，那筆扣用會被這次校正抵銷掉。
-		if ( null !== $set_to ) {
-			$qty = round( $set_to - (float) $row['stock'], 3 );
-			if ( 0.0 === $qty ) {
-				$wpdb->query( 'ROLLBACK' ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
-				return new WP_Error( 'uappt_consumable_no_diff', __( '盤點數量跟帳面一樣，沒有差額要校正。', 'ultimate-appointments' ) );
-			}
-			if ( empty( $args['note'] ) ) {
-				$args['note'] = sprintf(
-					/* translators: 1: 帳面數量 2: 實際盤點數量 */
-					__( '盤點校正：帳面 %1$s → 實際 %2$s', 'ultimate-appointments' ),
-					self::format_qty( $row['stock'] ),
-					self::format_qty( $set_to )
+				$balance_after = round( (float) $row['stock'] + $qty, 3 );
+
+				// 成本快照：用「異動當下」的單價，不是報表產出時的單價（規則 3）。
+				$unit_cost  = null;
+				$cost_total = null;
+				if ( array_key_exists( 'cost_total', $args ) ) {
+					if ( null !== $args['cost_total'] ) {
+						$cost_total = round( (float) $args['cost_total'], 2 );
+						$unit_cost  = 0.0 !== $qty ? round( $cost_total / abs( $qty ), 4 ) : null;
+					}
+				} elseif ( null !== $row['unit_cost'] ) {
+					$unit_cost  = (float) $row['unit_cost'];
+					$cost_total = round( $unit_cost * abs( $qty ), 2 );
+				}
+
+				$inserted = $wpdb->insert( // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+					$moves_table,
+					array(
+						'consumable_id' => $consumable_id,
+						'type'          => sanitize_key( $type ),
+						'qty'           => $qty,
+						'balance_after' => $balance_after,
+						'booking_id'        => ! empty( $args['booking_id'] ) ? (int) $args['booking_id'] : null,
+						'staff_id'          => ! empty( $args['staff_id'] ) ? (int) $args['staff_id'] : null,
+						'unit_cost'     => $unit_cost,
+						'cost_total'        => $cost_total,
+						'note'              => isset( $args['note'] ) ? sanitize_text_field( $args['note'] ) : '',
+						'created_by'    => isset( $args['created_by'] ) ? (int) $args['created_by'] : get_current_user_id(),
+						'created_at'    => current_time( 'mysql' ),
+					),
+					array( '%d', '%s', '%f', '%f', '%d', '%d', '%f', '%f', '%s', '%d', '%s' )
 				);
-			}
-		}
 
-		$balance_after = round( (float) $row['stock'] + $qty, 3 );
+				if ( ! $inserted ) {
+					return new WP_Error( 'uappt_move_insert_failed', __( '寫入耗材異動時發生錯誤，請稍後再試。', 'ultimate-appointments' ) );
+				}
 
-		// 成本快照：用「異動當下」的單價，不是報表產出時的單價（規則 3）。
-		$unit_cost  = null;
-		$cost_total = null;
-		if ( array_key_exists( 'cost_total', $args ) ) {
-			if ( null !== $args['cost_total'] ) {
-				$cost_total = round( (float) $args['cost_total'], 2 );
-				$unit_cost  = 0.0 !== $qty ? round( $cost_total / abs( $qty ), 4 ) : null;
-			}
-		} elseif ( null !== $row['unit_cost'] ) {
-			$unit_cost  = (float) $row['unit_cost'];
-			$cost_total = round( $unit_cost * abs( $qty ), 2 );
-		}
+				$move_id = (int) $wpdb->insert_id;
 
-		$inserted = $wpdb->insert( // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
-			$moves_table,
-			array(
-				'consumable_id' => $consumable_id,
-				'type'          => sanitize_key( $type ),
-				'qty'           => $qty,
-				'balance_after' => $balance_after,
-				'booking_id'    => ! empty( $args['booking_id'] ) ? (int) $args['booking_id'] : null,
-				'staff_id'      => ! empty( $args['staff_id'] ) ? (int) $args['staff_id'] : null,
-				'unit_cost'     => $unit_cost,
-				'cost_total'    => $cost_total,
-				'note'          => isset( $args['note'] ) ? sanitize_text_field( $args['note'] ) : '',
-				'created_by'    => isset( $args['created_by'] ) ? (int) $args['created_by'] : get_current_user_id(),
-				'created_at'    => current_time( 'mysql' ),
-			),
-			array( '%d', '%s', '%f', '%f', '%d', '%d', '%f', '%f', '%s', '%d', '%s' )
+				$updated = $wpdb->update( // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+					$table,
+					array(
+						'stock'      => $balance_after,
+						'updated_at' => current_time( 'mysql' ),
+					),
+					array( 'id' => $consumable_id ),
+					array( '%f', '%s' ),
+					array( '%d' )
+				);
+
+				if ( 1 !== $updated ) {
+					return new WP_Error( 'uappt_move_stock_failed', __( '更新耗材結存時發生錯誤，請稍後再試。', 'ultimate-appointments' ) );
+				}
+
+				return $move_id;
+			},
+			! empty( $args['in_transaction'] )
 		);
-
-		if ( ! $inserted ) {
-			$wpdb->query( 'ROLLBACK' ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
-			return new WP_Error( 'uappt_move_insert_failed', __( '寫入耗材異動時發生錯誤，請稍後再試。', 'ultimate-appointments' ) );
-		}
-
-		$move_id = (int) $wpdb->insert_id;
-
-		$wpdb->update( // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
-			$table,
-			array(
-				'stock'      => $balance_after,
-				'updated_at' => current_time( 'mysql' ),
-			),
-			array( 'id' => $consumable_id ),
-			array( '%f', '%s' ),
-			array( '%d' )
-		);
-
-		$wpdb->query( 'COMMIT' ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
-
-		return $move_id;
 	}
 
 	/**
@@ -517,9 +555,10 @@ class UAPPT_Consumable {
 	 * @param string $scope      SCOPE_* 常數。
 	 * @param int    $product_id 商品 ID（global 時為 0）。
 	 * @param string $plan_key   方案鍵（只有 plan 用得到）。
-	 * @return array 每個元素：['consumable_id','qty_per_service','per_unit']
+	 * @param bool   $strict     扣帳時必須分辨查詢失敗與沒有配方。
+	 * @return array|WP_Error 每個元素：['consumable_id','qty_per_service','per_unit']
 	 */
-	public static function get_recipe_rows( $scope, $product_id = 0, $plan_key = '' ) {
+	public static function get_recipe_rows( $scope, $product_id = 0, $plan_key = '', $strict = false ) {
 		global $wpdb;
 		$table = UAPPT_Install::table( 'consumable_recipes' );
 
@@ -535,6 +574,9 @@ class UAPPT_Consumable {
 			ARRAY_A
 		);
 
+		if ( $strict && ! empty( $wpdb->last_error ) ) {
+			return new WP_Error( 'uappt_recipe_read_failed', __( '讀取耗材配方時發生錯誤，請稍後再試。', 'ultimate-appointments' ) );
+		}
 		return $rows ? $rows : array();
 	}
 
@@ -622,12 +664,17 @@ class UAPPT_Consumable {
 	 *
 	 * @param int    $product_id 商品 ID。
 	 * @param string $plan_key   方案鍵。
-	 * @return array consumable_id => ['qty_per_service','per_unit']
+	 * @param bool   $strict     扣帳時必須回報配方讀取失敗。
+	 * @return array|WP_Error consumable_id => ['qty_per_service','per_unit']
 	 */
-	public static function resolve_recipe( $product_id, $plan_key = '' ) {
+	public static function resolve_recipe( $product_id, $plan_key = '', $strict = false ) {
 		$merged = array();
 
-		foreach ( self::get_recipe_rows( self::SCOPE_GLOBAL ) as $row ) {
+		$global = self::get_recipe_rows( self::SCOPE_GLOBAL, 0, '', $strict );
+		if ( is_wp_error( $global ) ) {
+			return $global;
+		}
+		foreach ( $global as $row ) {
 			$merged[ (int) $row['consumable_id'] ] = array(
 				'qty_per_service' => (float) $row['qty_per_service'],
 				'per_unit'        => ! empty( $row['per_unit'] ),
@@ -636,12 +683,15 @@ class UAPPT_Consumable {
 
 		$specific = array();
 		if ( '' !== (string) $plan_key ) {
-			$specific = self::get_recipe_rows( self::SCOPE_PLAN, $product_id, $plan_key );
+			$specific = self::get_recipe_rows( self::SCOPE_PLAN, $product_id, $plan_key, $strict );
 		}
 		if ( ! $specific ) {
-			$specific = self::get_recipe_rows( self::SCOPE_PRODUCT, $product_id );
+			$specific = self::get_recipe_rows( self::SCOPE_PRODUCT, $product_id, '', $strict );
 		}
 
+		if ( is_wp_error( $specific ) ) {
+			return $specific;
+		}
 		foreach ( $specific as $row ) {
 			$merged[ (int) $row['consumable_id'] ] = array(
 				'qty_per_service' => (float) $row['qty_per_service'],
@@ -697,7 +747,7 @@ class UAPPT_Consumable {
 	 * 按淨額做就不需要任何「批次」的概念，完成→還原反覆幾次都會歸零。
 	 *
 	 * @param int $booking_id 預約 ID。
-	 * @return array consumable_id => ['qty'=>float 淨扣數量（正數）,'cost'=>float|null 淨成本]
+	 * @return array|WP_Error consumable_id => ['qty'=>float 淨扣數量（正數）,'cost'=>float|null 淨成本]
 	 */
 	protected static function outstanding_for_booking( $booking_id ) {
 		global $wpdb;
@@ -720,6 +770,9 @@ class UAPPT_Consumable {
 			ARRAY_A
 		);
 
+		if ( ! empty( $wpdb->last_error ) ) {
+			return new WP_Error( 'uappt_moves_read_failed', __( '讀取耗材扣用紀錄時發生錯誤，請稍後再試。', 'ultimate-appointments' ) );
+		}
 		$out = array();
 		foreach ( (array) $rows as $row ) {
 			$qty = round( (float) $row['net_qty'], 3 );
@@ -747,20 +800,39 @@ class UAPPT_Consumable {
 	 * @return bool
 	 */
 	public static function is_consumed( $booking_id ) {
-		return ! empty( self::outstanding_for_booking( $booking_id ) );
+		$outstanding = self::outstanding_for_booking( $booking_id );
+		// 讀取失敗回傳的是 WP_Error 物件，不是空陣列——用 empty() 判斷會被當成「已扣用」。
+		return ! is_wp_error( $outstanding ) && ! empty( $outstanding );
 	}
 
 	/**
 	 * 服務完成：照配方扣用耗材。
 	 *
-	 * 由 `UAPPT_Booking::complete()` 在狀態真的寫進去之後呼叫。**扣不到不會讓
-	 * 完成失敗**——服務已經做了，因為庫存記錄的問題把「標記完成」擋下來是本末
-	 * 倒置；庫存扣成負數本身就是「該去盤點了」的訊號。
+	 * 與預約狀態使用同一交易，任何一項寫入失敗就全部復原。
+	 * 庫存扣成負數仍允許；資料庫異常不能被當作正常完成。
 	 *
 	 * @param array $booking 預約紀錄（`UAPPT_Booking::get()` 的回傳值）。
-	 * @return int 實際扣了幾種耗材。
+	 * @param bool $in_transaction 沿用呼叫端交易。
+	 * @return int|WP_Error 實際扣了幾種耗材，或失敗原因。
 	 */
-	public static function consume_for_booking( $booking ) {
+	public static function consume_for_booking( $booking, $in_transaction = false ) {
+		return self::with_transaction( static function () use ( $booking ) {
+			global $wpdb;
+			if ( ! $booking ) {
+				return 0;
+			}
+			// 獨立呼叫時也遵守「先預約列、再耗材列」；重讀避免等鎖期間狀態已改變。
+			$table = UAPPT_Install::table( 'bookings' );
+			$fresh = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$table} WHERE id = %d FOR UPDATE", (int) $booking['id'] ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+			if ( ! $fresh ) {
+				return new WP_Error( 'uappt_booking_missing', __( '讀取預約時發生錯誤，請稍後再試。', 'ultimate-appointments' ) );
+			}
+			return self::consume_for_booking_locked( $fresh );
+		}, $in_transaction );
+	}
+
+	/** 呼叫端已鎖定預約列，逐項異動參與同一交易。 */
+	private static function consume_for_booking_locked( $booking ) {
 		// gating 的第 2 層（hook）。模組關著就不要偷偷扣庫存——店家連耗材頁面
 		// 都看不到，帳卻一直在動，那是最糟的狀態。
 		//
@@ -783,11 +855,19 @@ class UAPPT_Consumable {
 		// 重複扣的保險絲。complete() 本身有狀態守衛擋著，但「完成 → 還原 →
 		// 完成」是真實會發生的操作序列，而且回沖之後 is_consumed() 會回 false，
 		// 第二次完成要能正常再扣一次。
-		if ( self::is_consumed( $booking_id ) ) {
+		$outstanding = self::outstanding_for_booking( $booking_id );
+		if ( is_wp_error( $outstanding ) ) {
+			return $outstanding;
+		}
+		if ( $outstanding ) {
 			return 0;
 		}
 
-		$recipe = self::resolve_recipe( (int) $booking['product_id'], (string) $booking['plan_key'] );
+		$recipe = self::resolve_recipe( (int) $booking['product_id'], (string) $booking['plan_key'], true );
+		if ( is_wp_error( $recipe ) ) {
+			return $recipe;
+		}
+		ksort( $recipe, SORT_NUMERIC );
 		if ( ! $recipe ) {
 			return 0;
 		}
@@ -808,15 +888,17 @@ class UAPPT_Consumable {
 				self::MOVE_CONSUME,
 				-$qty,
 				array(
-					'booking_id' => $booking_id,
-					'staff_id'   => (int) $booking['staff_id'],
-					'note'       => UAPPT_Booking::get_booking_display_name( $booking ),
+					'in_transaction' => true,
+					'booking_id'        => $booking_id,
+					'staff_id'          => (int) $booking['staff_id'],
+					'note'              => UAPPT_Booking::get_booking_display_name( $booking ),
 				)
 			);
 
-			if ( ! is_wp_error( $result ) ) {
-				$done++;
+			if ( is_wp_error( $result ) ) {
+				return $result;
 			}
+			$done++;
 		}
 
 		return $done;
@@ -833,9 +915,27 @@ class UAPPT_Consumable {
 	 * 「這筆預約曾經被標記完成又被還原」。
 	 *
 	 * @param array $booking 預約紀錄。
-	 * @return int 實際回沖了幾筆。
+	 * @param bool $in_transaction 沿用呼叫端交易。
+	 * @return int|WP_Error 實際回沖了幾筆，或失敗原因。
 	 */
-	public static function revert_for_booking( $booking ) {
+	public static function revert_for_booking( $booking, $in_transaction = false ) {
+		return self::with_transaction( static function () use ( $booking ) {
+			global $wpdb;
+			if ( ! $booking ) {
+				return 0;
+			}
+			// 獨立呼叫時也遵守「先預約列、再耗材列」；重讀避免等鎖期間狀態已改變。
+			$table = UAPPT_Install::table( 'bookings' );
+			$fresh = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM {$table} WHERE id = %d FOR UPDATE", (int) $booking['id'] ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+			if ( ! $fresh ) {
+				return new WP_Error( 'uappt_booking_missing', __( '讀取預約時發生錯誤，請稍後再試。', 'ultimate-appointments' ) );
+			}
+			return self::revert_for_booking_locked( $fresh );
+		}, $in_transaction );
+	}
+
+	/** 呼叫端已鎖定預約列，逐項異動參與同一交易。 */
+	private static function revert_for_booking_locked( $booking ) {
 		// ⚠️ **刻意不做模組檢查**，理由見 consume_for_booking()：回沖是收拾
 		// 已經發生的事，擋掉會讓流水帳永遠對不起來。沒扣過的預約淨額本來就是 0，
 		// 所以模組從頭到尾關著時這支也不會做事。
@@ -847,6 +947,10 @@ class UAPPT_Consumable {
 
 		// 每一種耗材回沖它還沒回沖完的淨額，成本用當初扣用時的快照（見 outstanding_for_booking()）。
 		$outstanding = self::outstanding_for_booking( $booking_id );
+		if ( is_wp_error( $outstanding ) ) {
+			return $outstanding;
+		}
+		ksort( $outstanding, SORT_NUMERIC );
 
 		$done = 0;
 		foreach ( $outstanding as $consumable_id => $net ) {
@@ -855,15 +959,17 @@ class UAPPT_Consumable {
 				self::MOVE_REVERT,
 				$net['qty'],
 				array(
-					'booking_id' => $booking_id,
-					'staff_id'   => (int) $booking['staff_id'],
-					'note'       => __( '預約還原為已確認，耗材回沖', 'ultimate-appointments' ),
-					'cost_total' => $net['cost'],
+					'in_transaction' => true,
+					'booking_id'        => $booking_id,
+					'staff_id'          => (int) $booking['staff_id'],
+					'note'              => __( '預約還原為已確認，耗材回沖', 'ultimate-appointments' ),
+					'cost_total'        => $net['cost'],
 				)
 			);
-			if ( ! is_wp_error( $result ) ) {
-				$done++;
+			if ( is_wp_error( $result ) ) {
+				return $result;
 			}
+			$done++;
 		}
 
 		return $done;

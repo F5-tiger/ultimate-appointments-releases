@@ -163,6 +163,7 @@
 		// 請求序號（v3.4.1）：快速換日期、翻月份時，較早的請求晚回來不能蓋掉新的畫面。
 		this.slotsSeq = 0;
 		this.monthSeq = 0;
+		this.viewSeq = 0;
 
 		this.steps = this.buildSteps();
 		this.index = 0;
@@ -362,6 +363,10 @@
 	};
 
 	Wizard.prototype.enter = function () {
+		// 一離開步驟就作廢，不能等下一次查時段才作廢：舊月份的失敗回應也會重畫整頁。
+		this.viewSeq++;
+		this.slotsSeq++;
+		this.monthSeq++;
 		// 換步驟時把精靈捲回視野內。時段那一步的清單很長，客人常常是在畫面
 		// 很下方點下去的，下一步渲染在上面——不捲的話他看到的是頁尾，會以為
 		// 按了沒反應。首次掛載不捲，那會搶走頁面本來的捲動位置。
@@ -412,6 +417,7 @@
 
 	Wizard.prototype.stepStaff = function () {
 		var params = {};
+		var view = this.viewSeq;
 
 		// 已經知道服務時，只列做得了這個服務的人員。
 		//
@@ -426,6 +432,9 @@
 		}
 
 		api( 'staff', params ).then( function ( data ) {
+			if ( view !== this.viewSeq ) {
+				return;
+			}
 			var list = data.staff || [];
 			if ( ! list.length ) {
 				// 還不知道服務就拿到空清單：全站都不開放指定人員（REST 刻意回空的，
@@ -460,7 +469,13 @@
 			}, true ) );
 
 			this.setBody( [ grid ] );
-		}.bind( this ) ).catch( this.fail.bind( this ) );
+		}.bind( this ) ).catch( this.failCurrent.bind( this, view ) );
+	};
+
+	Wizard.prototype.failCurrent = function ( view, err ) {
+		if ( view === this.viewSeq ) {
+			this.fail( err );
+		}
 	};
 
 	Wizard.prototype.staffCard = function ( s, isAny ) {
@@ -509,12 +524,16 @@
 	// --- 步驟：選服務項目（商品） -----------------------------------------
 
 	Wizard.prototype.stepService = function () {
+		var view = this.viewSeq;
 		// 跟 stepStaff() 是對稱的：已經知道人員時只列這個人做得了的服務，
 		// 而「已經知道」同樣不包含「退回來改」——先選項目模式下退回這一步時，
 		// goTo() 會先把 staffId 清掉，否則服務清單會被上一輪選的人員縮掉。
 		api( 'services', {
 			staff_id: this.state.staffId || 0
 		} ).then( function ( data ) {
+			if ( view !== this.viewSeq ) {
+				return;
+			}
 			var groups = groupByProduct( data.services || [] );
 			if ( ! groups.length ) {
 				this.setBody( [ el( 'p', 'uappt-wiz-empty', t( 'noService' ) ) ] );
@@ -534,7 +553,7 @@
 			}, this );
 
 			this.setBody( [ grid ] );
-		}.bind( this ) ).catch( this.fail.bind( this ) );
+		}.bind( this ) ).catch( this.failCurrent.bind( this, view ) );
 	};
 
 	Wizard.prototype.productCard = function ( g, withThumb ) {
@@ -605,6 +624,7 @@
 	// --- 步驟：選方案 -----------------------------------------------------
 
 	Wizard.prototype.stepPlan = function () {
+		var view = this.viewSeq;
 		// 從「選擇服務」點進來時方案已經在手上（那一步就是依同一位人員查的）。
 		// 限定商品（data-product）時沒有那一步，要自己查。
 		var ready = this.state.product
@@ -617,6 +637,9 @@
 			} );
 
 		ready.then( function ( groups ) {
+			if ( view !== this.viewSeq ) {
+				return;
+			}
 			var g = groups[ 0 ];
 			if ( ! g || ! g.plans.length ) {
 				this.setBody( [ el( 'p', 'uappt-wiz-empty', t( 'noService' ) ) ] );
@@ -649,7 +672,7 @@
 
 			// 方案名稱常常只是「60 分鐘」「進階」這種詞，上面標出是哪一項服務。
 			this.setBody( [ el( 'p', 'uappt-wiz-step-head', g.name ), grid ] );
-		}.bind( this ) ).catch( this.fail.bind( this ) );
+		}.bind( this ) ).catch( this.failCurrent.bind( this, view ) );
 	};
 
 	/**
@@ -661,14 +684,19 @@
 	Wizard.prototype.pickPlan = function ( s, auto ) {
 		this.state.service = s;
 		this.state.planAuto = !! auto;
+		this.normalizeStaffChoice();
+		this.next();
+	};
+
+	Wizard.prototype.normalizeStaffChoice = function () {
 		// 這個服務不開放客人指定人員時，把先前選的人清掉，
 		// 避免摘要顯示一位其實不會被採用的人員。
-		if ( false === s.staff_choice ) {
+		if ( this.state.service && false === this.state.service.staff_choice ) {
 			this.state.staffId = 0;
 			this.state.staffName = '';
 			this.state.staffAdjust = 0;
+			this.locked.staff = 0;
 		}
-		this.next();
 	};
 
 	// --- 步驟：選時間（月曆 + 時段） ---------------------------------------
@@ -1149,37 +1177,40 @@
 			);
 		}
 
-		if ( wiz.locked.staff ) {
-			jobs.push(
-				api( 'staff', {} ).then( function ( data ) {
-					var match = ( data.staff || [] ).filter( function ( s ) {
-						return s.id === wiz.locked.staff;
-					} )[ 0 ];
-
-					if ( match ) {
-						wiz.state.staffName = match.name;
-						wiz.state.staffAdjust = Number( match.price_adjustment ) || 0;
-					} else {
-						wiz.locked.staff = 0;
-						wiz.state.staffId = 0;
-					}
-				} )
-			);
-		}
-
-		if ( ! jobs.length ) {
-			wiz.start();
-			return;
-		}
-
 		Promise.all( jobs ).then( function () {
+			// 專屬連結也要遵守方案的指定政策，不能讓全站人員資料把已清除的加價填回來。
+			wiz.normalizeStaffChoice();
+			if ( ! wiz.locked.staff ) {
+				return;
+			}
+			var params = wiz.state.service ? {
+				product_id: wiz.state.service.product_id,
+				plan_key: wiz.state.service.plan_key
+			} : {};
+			return api( 'staff', params ).then( function ( data ) {
+				var match = ( data.staff || [] ).filter( function ( s ) {
+					return s.id === wiz.locked.staff;
+				} )[ 0 ];
+				if ( match ) {
+					wiz.state.staffName = match.name;
+					wiz.state.staffAdjust = Number( match.price_adjustment ) || 0;
+				} else {
+					wiz.locked.staff = 0;
+					wiz.state.staffId = 0;
+					wiz.state.staffName = '';
+					wiz.state.staffAdjust = 0;
+				}
+			} );
+		} ).then( function () {
 			wiz.start();
 		} ).catch( function () {
-			// 查不到就退回完整流程，不要讓客人卡在載入中。
+			// 查不到就退回完整流程，不要讓客人卡在載入中或殘留先前已取得的加價。
 			wiz.locked.service = 0;
 			wiz.locked.staff = 0;
 			wiz.state.service = null;
 			wiz.state.staffId = 0;
+			wiz.state.staffName = '';
+			wiz.state.staffAdjust = 0;
 			wiz.start();
 		} );
 	}

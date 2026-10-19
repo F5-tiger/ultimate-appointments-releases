@@ -21,6 +21,107 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 class UAPPT_Booking {
 
+	/** 時間格設定與所有容量寫入共用一把鎖；不能在回呼中另開預約交易。 */
+	protected static $grid_lock_held = false;
+	protected static $grid_configuration_transaction = false;
+
+	/**
+	 * 間距切換必須涵蓋「讀設定 → 搬移 → 寫設定」，預約寫入也從讀人員之前排隊。
+	 * 不允許同請求重入：選項 hooks 若嘗試建立預約，不能提交外層尚未完成的交易。
+	 *
+	 * @param callable $callback 鎖內工作。
+	 * @return mixed|WP_Error
+	 */
+	public static function with_grid_lock( $callback ) {
+		global $wpdb;
+		$error = new WP_Error( 'uappt_grid_busy', __( '預約時段正在更新，請稍後再試。', 'ultimate-appointments' ) );
+		if ( self::$grid_lock_held ) {
+			return $error;
+		}
+		$database = defined( 'DB_NAME' ) ? DB_NAME : '';
+		$lock_name = 'uappt_grid_' . md5( $database . ':' . UAPPT_Install::table( 'bookings' ) );
+		if ( 1 !== (int) $wpdb->get_var( $wpdb->prepare( 'SELECT GET_LOCK( %s, %d )', $lock_name, 10 ) ) ) { // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+			return $error;
+		}
+		self::$grid_lock_held = true;
+		try {
+			return call_user_func( $callback );
+		} catch ( Throwable $error ) {
+			$wpdb->query( 'ROLLBACK' ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+			return new WP_Error( 'uappt_grid_failed', __( '儲存預約時段時發生錯誤，請稍後再試。', 'ultimate-appointments' ) );
+		} finally {
+			self::$grid_lock_held = false;
+			$wpdb->query( $wpdb->prepare( 'SELECT RELEASE_LOCK( %s )', $lock_name ) ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+		}
+	}
+
+	/**
+	 * 目前是不是在 update_grid_configuration() 的交易裡。
+	 *
+	 * UAPPT_Staff::save() 只有間距會變時才走那個交易；沒走的話（存檔前判斷間距不變、
+	 * 寫入時卻變了的少見競態），搬格失敗要自己把間距改回去。
+	 *
+	 * @return bool
+	 */
+	public static function in_grid_configuration() {
+		return self::$grid_configuration_transaction;
+	}
+
+	/** 等鎖前可能已讀過 alloptions；寫入期間直接讀資料庫，不能沿用請求的舊快取。 */
+	public static function get_global_grid_interval() {
+		global $wpdb;
+		if ( ! self::$grid_lock_held ) {
+			return max( 5, (int) get_option( 'uappt_slot_interval_minutes', 15 ) );
+		}
+		$value = $wpdb->get_var( $wpdb->prepare( "SELECT option_value FROM {$wpdb->options} WHERE option_name = %s", 'uappt_slot_interval_minutes' ) ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+		if ( ! empty( $wpdb->last_error ) ) {
+			// 無法讀取不能當成「未設定」退回 15，否則會拿錯格子判斷容量。
+			throw new RuntimeException( 'Unable to read booking interval.' );
+		}
+		return null === $value ? 15 : max( 5, (int) $value );
+	}
+
+	/**
+	 * 設定寫入與時間格搬移共用交易。回呼只做資料寫入，不能自行提交或另開交易。
+	 * 選項快取會在提交／回復後清掉，後續讀取不會看到回復前的設定。
+	 *
+	 * @param callable $callback 設定變更；失敗回傳 WP_Error。
+	 * @return mixed|WP_Error
+	 */
+	public static function update_grid_configuration( $callback ) {
+		return self::with_grid_lock( static function () use ( $callback ) {
+			global $wpdb;
+			$error = new WP_Error( 'uappt_regrid_failed', __( '儲存時段設定時發生錯誤，設定與既有預約已維持原狀，請稍後再試。', 'ultimate-appointments' ) );
+			// 舊站可能仍用非交易引擎；先拒絕，不能假裝 ROLLBACK 能還原它。
+			$tables = array( $wpdb->options, UAPPT_Install::table( 'staff' ), UAPPT_Install::table( 'bookings' ), UAPPT_Install::table( 'slot_grid' ) );
+			$engines = $wpdb->get_results( $wpdb->prepare( 'SHOW TABLE STATUS WHERE Name IN (%s, %s, %s, %s)', $tables ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+			if ( count( (array) $engines ) !== count( $tables ) || array_filter( (array) $engines, static function ( $row ) { return 'InnoDB' !== $row['Engine']; } ) ) {
+				return new WP_Error( 'uappt_transaction_required', __( '時段設定需要支援交易的資料表，請先請網站管理員確認資料庫使用 InnoDB。本次未變更設定。', 'ultimate-appointments' ) );
+			}
+			if ( false === $wpdb->query( 'START TRANSACTION' ) ) { // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+				return $error;
+			}
+			self::$grid_configuration_transaction = true;
+			$committed = false;
+			try {
+				$result = call_user_func( $callback );
+				if ( is_wp_error( $result ) ) {
+					return $result;
+				}
+				$committed = self::commit();
+				return $committed ? $result : $error;
+			} finally {
+				if ( ! $committed ) {
+					$wpdb->query( 'ROLLBACK' ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+				}
+				self::$grid_configuration_transaction = false;
+				wp_cache_delete( 'uappt_slot_interval_minutes', 'options' );
+				wp_cache_delete( 'alloptions', 'options' );
+				wp_cache_delete( 'notoptions', 'options' );
+			}
+		} );
+	}
+
 	const STATUS_HELD      = 'held';
 	const STATUS_CONFIRMED = 'confirmed';
 	const STATUS_CANCELLED = 'cancelled';
@@ -470,6 +571,13 @@ class UAPPT_Booking {
 	 * @return int|WP_Error 預約 ID。
 	 */
 	public static function create_hold( $args ) {
+		return self::with_grid_lock( static function () use ( $args ) {
+			return self::create_hold_locked( $args );
+		} );
+	}
+
+	/** 已持有時間格設定鎖的內部實作。 */
+	protected static function create_hold_locked( $args, $manage_transaction = true ) {
 		global $wpdb;
 
 		$product_id      = (int) $args['product_id'];
@@ -604,7 +712,9 @@ class UAPPT_Booking {
 			return new WP_Error( 'uappt_outside_hours', __( '此時段不在營業時間內，請重新選擇。', 'ultimate-appointments' ) );
 		}
 
-		$wpdb->query( 'START TRANSACTION' ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+		if ( $manage_transaction && false === $wpdb->query( 'START TRANSACTION' ) ) { // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+			return new WP_Error( 'uappt_insert_failed', __( '建立預約時發生錯誤，請稍後再試。', 'ultimate-appointments' ) );
+		}
 
 		self::ensure_cells_exist( $eligible );
 		$occupied_map = self::lock_cells( $eligible );
@@ -698,7 +808,7 @@ class UAPPT_Booking {
 		}
 
 		$booking_id = (int) $wpdb->insert_id;
-		if ( ! self::commit() ) {
+		if ( $manage_transaction && ! self::commit() ) {
 			return new WP_Error( 'uappt_insert_failed', __( '建立預約時發生錯誤，請稍後再試。', 'ultimate-appointments' ) );
 		}
 
@@ -724,6 +834,13 @@ class UAPPT_Booking {
 	 * @return true|WP_Error
 	 */
 	public static function reschedule( $booking_id, $date_ymd, $time_hm ) {
+		return self::with_grid_lock( static function () use ( $booking_id, $date_ymd, $time_hm ) {
+			return self::reschedule_locked( $booking_id, $date_ymd, $time_hm );
+		} );
+	}
+
+	/** 已持有時間格設定鎖的內部實作。 */
+	protected static function reschedule_locked( $booking_id, $date_ymd, $time_hm ) {
 		global $wpdb;
 
 		$booking = self::get( $booking_id );
@@ -776,7 +893,7 @@ class UAPPT_Booking {
 		// 舊時段一律用這筆預約自己儲存的 staff_id / grid_interval / block 範圍推算，
 		// 不重讀現在的設定——設定可能在這筆預約建立之後被改過，用當下設定反推
 		// 舊時間格會對不齊，導致舊格的佔用永遠還不回去（v1.2.0 已修過的同一類問題）。
-		$old_interval       = ! empty( $booking['grid_interval'] ) ? (int) $booking['grid_interval'] : max( 5, (int) get_option( 'uappt_slot_interval_minutes', 15 ) );
+		$old_interval       = ! empty( $booking['grid_interval'] ) ? (int) $booking['grid_interval'] : self::get_global_grid_interval();
 		$old_block_start_ts = self::local_ts( $booking['block_start'] );
 		$old_block_end_ts   = self::local_ts( $booking['block_end'] );
 		$old_cells          = self::grid_cells( $old_block_start_ts, $old_block_end_ts, $old_interval );
@@ -895,6 +1012,13 @@ class UAPPT_Booking {
 	 * @return true|WP_Error
 	 */
 	public static function reassign_staff( $booking_id, $new_staff_id ) {
+		return self::with_grid_lock( static function () use ( $booking_id, $new_staff_id ) {
+			return self::reassign_staff_locked( $booking_id, $new_staff_id );
+		} );
+	}
+
+	/** 已持有時間格設定鎖的內部實作。 */
+	protected static function reassign_staff_locked( $booking_id, $new_staff_id ) {
 		global $wpdb;
 
 		$new_staff_id = (int) $new_staff_id;
@@ -950,7 +1074,7 @@ class UAPPT_Booking {
 		// 舊格子一律用這筆預約自己存的 grid_interval / block 範圍推算，不重讀現在的
 		// 設定——設定可能被改過，用當下設定反推舊時間格會對不齊（見 reschedule()
 		// 的同一段說明，這是 v1.2.0 修過的同一類問題）。
-		$old_interval       = ! empty( $booking['grid_interval'] ) ? (int) $booking['grid_interval'] : max( 5, (int) get_option( 'uappt_slot_interval_minutes', 15 ) );
+		$old_interval       = ! empty( $booking['grid_interval'] ) ? (int) $booking['grid_interval'] : self::get_global_grid_interval();
 		$old_block_start_ts = self::local_ts( $booking['block_start'] );
 		$old_block_end_ts   = self::local_ts( $booking['block_end'] );
 		$old_cells          = self::grid_cells( $old_block_start_ts, $old_block_end_ts, $old_interval );
@@ -1057,27 +1181,7 @@ class UAPPT_Booking {
 	 * @return bool
 	 */
 	public static function complete( $booking_id ) {
-		$booking = self::get( $booking_id );
-		if ( ! $booking || self::STATUS_CONFIRMED !== $booking['status'] ) {
-			return false;
-		}
-
-		// 「仍是 confirmed 才改」放進同一個 UPDATE（v3.4.1）：讀到 confirmed 之後、
-		// 寫入之前，另一個請求可能剛把它取消、把格子還回去了。以前照樣改成 completed，
-		// 留下一筆沒有佔用的「已完成」，還照扣耗材。
-		if ( ! self::transition_status( $booking_id, self::STATUS_CONFIRMED, self::STATUS_COMPLETED ) ) {
-			return false;
-		}
-
-		// 耗材扣帳：**狀態真的寫進去之後**才扣，而且扣不到也不會讓完成失敗
-		// ——服務已經做了，因為庫存記錄的問題把「標記完成」擋下來是本末倒置
-		// （庫存扣成負數本身就是「該去盤點了」的訊號）。
-		//
-		// ⚠️ 這裡跟 revert_to_confirmed() 的回沖**必須成對存在**，漏掉一邊
-		// 就會每還原一次少一份庫存，而且沒有任何地方會報錯。
-		UAPPT_Consumable::consume_for_booking( $booking );
-
-		return true;
+		return self::transition_with_consumables( $booking_id, false );
 	}
 
 	/**
@@ -1125,27 +1229,42 @@ class UAPPT_Booking {
 	 * @return bool
 	 */
 	public static function revert_to_confirmed( $booking_id ) {
-		$booking = self::get( $booking_id );
-		if ( ! $booking || self::KIND_BOOKING !== $booking['kind'] ) {
+		return self::transition_with_consumables( $booking_id, true );
+	}
+
+	/**
+	 * 完成／還原與所有耗材同一交易：狀態提交之前持有預約列鎖。
+	 * 庫存不足仍可記負數；資料庫寫入失敗則整筆復原，不能顯示成功卻漏帳。
+	 */
+	protected static function transition_with_consumables( $booking_id, $revert ) {
+		global $wpdb;
+		if ( false === $wpdb->query( 'START TRANSACTION' ) ) { // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
 			return false;
 		}
-		if ( ! in_array( $booking['status'], array( self::STATUS_COMPLETED, self::STATUS_NO_SHOW ), true ) ) {
-			return false;
+		$committed = false;
+		try {
+			$booking = self::lock_booking_row( $booking_id );
+			$allowed = $revert ? array( self::STATUS_COMPLETED, self::STATUS_NO_SHOW ) : array( self::STATUS_CONFIRMED );
+			if ( ! $booking || self::KIND_BOOKING !== $booking['kind'] || ! in_array( $booking['status'], $allowed, true ) ) {
+				return false;
+			}
+			$target = $revert ? self::STATUS_CONFIRMED : self::STATUS_COMPLETED;
+			if ( ! self::transition_status( $booking_id, $booking['status'], $target ) ) {
+				return false;
+			}
+			$result = $revert
+				? UAPPT_Consumable::revert_for_booking( $booking, true )
+				: UAPPT_Consumable::consume_for_booking( $booking, true );
+			if ( is_wp_error( $result ) ) {
+				return false;
+			}
+			$committed = self::commit();
+			return $committed;
+		} finally {
+			if ( ! $committed ) {
+				$wpdb->query( 'ROLLBACK' ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+			}
 		}
-
-		// 條件用「讀到的那一個」狀態，不是兩個都收：兩位主管同時按還原時只有一邊會
-		// 成功，耗材也就只回沖一次（v3.4.1）。
-		if ( ! self::transition_status( $booking_id, $booking['status'], self::STATUS_CONFIRMED ) ) {
-			return false;
-		}
-
-		// 耗材回沖，跟 complete() 的扣帳成對。只有從「已完成」還原回來時才
-		// 真的會有東西可回沖——「未到」本來就沒扣過（人沒來就沒用到耗材），
-		// revert_for_booking() 自己會用 is_consumed() 判斷，這裡不需要再依
-		// 狀態分支一次。
-		UAPPT_Consumable::revert_for_booking( $booking );
-
-		return true;
 	}
 
 	/**
@@ -1282,6 +1401,13 @@ class UAPPT_Booking {
 	 * @return int|WP_Error 佔用紀錄 ID。
 	 */
 	public static function create_block( $args ) {
+		return self::with_grid_lock( static function () use ( $args ) {
+			return self::create_block_locked( $args );
+		} );
+	}
+
+	/** 已持有時間格設定鎖的內部實作。 */
+	protected static function create_block_locked( $args ) {
 		global $wpdb;
 
 		$staff_id = isset( $args['staff_id'] ) ? (int) $args['staff_id'] : 0;
@@ -1446,6 +1572,14 @@ class UAPPT_Booking {
 	 * @return bool
 	 */
 	public static function release( $booking_id, $new_status = self::STATUS_CANCELLED, $condition = null ) {
+		$result = self::with_grid_lock( static function () use ( $booking_id, $new_status, $condition ) {
+			return self::release_locked( $booking_id, $new_status, $condition );
+		} );
+		return ! is_wp_error( $result ) && $result;
+	}
+
+	/** 已持有時間格設定鎖的內部實作。 */
+	protected static function release_locked( $booking_id, $new_status = self::STATUS_CANCELLED, $condition = null ) {
 		global $wpdb;
 
 		$wpdb->query( 'START TRANSACTION' ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
@@ -1477,7 +1611,7 @@ class UAPPT_Booking {
 			// 一律用這筆預約「建立當下」實際使用的顆粒（grid_interval）來推算要歸還
 			// 哪些時間格，不重新讀取現在的設定——設定可能在暫留建立之後被改掉，
 			// 兩邊算出的時間格邊界對不齊就會導致佔用還不回去、時段被永久卡死。
-			$interval       = ! empty( $booking['grid_interval'] ) ? (int) $booking['grid_interval'] : max( 5, (int) get_option( 'uappt_slot_interval_minutes', 15 ) );
+			$interval       = ! empty( $booking['grid_interval'] ) ? (int) $booking['grid_interval'] : self::get_global_grid_interval();
 			$block_start_ts = self::local_ts( $booking['block_start'] );
 			$block_end_ts   = self::local_ts( $booking['block_end'] );
 			$cells          = self::grid_cells( $block_start_ts, $block_end_ts, $interval );
@@ -1750,8 +1884,8 @@ class UAPPT_Booking {
 	 * 狀態可能同時被兩個請求改，兩邊都讀到同一筆 expired 就會各補鎖一次——容量大於 1
 	 * 時兩次都成功，同一個訂單項目佔了兩個名額。所以：
 	 *
-	 * 1. 用 MySQL 的 GET_LOCK 讓同一筆舊預約的補鎖排隊。不能用交易鎖：create_hold()
-	 *    自己會開交易，MySQL 的 START TRANSACTION 會先把外層的交易提交掉，鎖也跟著放了。
+	 * 1. 先取得與設定變更共用的時間格鎖，再在同一交易內建立、綁訂單、脫鉤舊紀錄。
+	 *    create_hold_locked() 參與外層交易，不再先行提交；任一步失敗全部回復。
 	 * 2. 拿到鎖之後先找「是不是已經有替代的那一筆」（同一張訂單、同一個訂單項目、同一個
 	 *    開始時間、比舊的新）。有就直接回傳它——重複處理拿到的是同一筆，不會再建。
 	 *    這也涵蓋「新的建好了、舊的還沒脫鉤就中斷」：下一次付款通知會在這裡把舊的脫鉤。
@@ -1767,26 +1901,49 @@ class UAPPT_Booking {
 	 * @return array
 	 */
 	protected static function relock( $booking, $order_id, $result ) {
+		$locked_result = self::with_grid_lock( static function () use ( $booking, $order_id, $result ) {
+			return self::relock_locked( $booking, $order_id, $result );
+		} );
+		if ( is_wp_error( $locked_result ) ) {
+			$result['ok'] = false;
+			$result['reason'] = 'uappt_grid_busy' === $locked_result->get_error_code() ? 'busy' : 'confirm_failed';
+			return $result;
+		}
+		return $locked_result;
+	}
+
+	/** 替代預約、訂單關聯與舊紀錄脫鉤一次提交，重試不會找到半套資料。 */
+	protected static function relock_locked( $booking, $order_id, $result ) {
 		global $wpdb;
-
-		$old_id        = (int) $booking['id'];
+		$old_id = (int) $booking['id'];
 		$order_item_id = (int) $booking['order_item_id'];
-
-		// 鎖名稱是整個 MySQL 伺服器共用的，加上資料表名稱，同一台主機上的其他站台不會撞名。
-		$lock_name = substr( UAPPT_Install::table( 'bookings' ) . '_relock_' . $old_id, 0, 64 );
-		$got_lock  = $wpdb->get_var( $wpdb->prepare( 'SELECT GET_LOCK( %s, %d )', $lock_name, 10 ) ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
-		if ( 1 !== (int) $got_lock ) {
-			$result['ok']     = false;
-			$result['reason'] = 'busy';
+		if ( false === $wpdb->query( 'START TRANSACTION' ) ) { // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+			$result['ok'] = false;
+			$result['reason'] = 'confirm_failed';
 			return $result;
 		}
 
+		$committed = false;
 		try {
+			$fresh = self::lock_booking_row( $old_id );
+			if ( ! $fresh ) {
+				$result['ok'] = false;
+				$result['reason'] = 'missing';
+				return $result;
+			}
 			$replacement = self::find_relock_replacement( $booking, $order_id );
+			if ( ! empty( $wpdb->last_error ) ) {
+				$result['ok'] = false;
+				$result['reason'] = 'confirm_failed';
+				return $result;
+			}
 			if ( $replacement ) {
-				$fresh = self::get( $old_id );
 				if ( $fresh && (int) $fresh['order_id'] === (int) $order_id ) {
-					self::detach_from_order( $old_id );
+					if ( ! self::detach_from_order( $old_id ) ) {
+						$result['ok'] = false;
+						$result['reason'] = 'confirm_failed';
+						return $result;
+					}
 				}
 
 				$result['already'] = true;
@@ -1795,11 +1952,15 @@ class UAPPT_Booking {
 					$result['booking_id'] = (int) $replacement['id'];
 					$result['relocked']   = true;
 				}
+				$committed = self::commit();
+				if ( ! $committed ) {
+					$result['ok'] = false;
+					$result['reason'] = 'confirm_failed';
+				}
 				return $result;
 			}
 
 			// 拿到鎖之後重讀：排隊的時候前一個處理可能已經把它脫鉤或改了狀態。
-			$fresh = self::get( $old_id );
 			if ( ! $fresh || (int) $fresh['order_id'] !== (int) $order_id
 				|| ! in_array( $fresh['status'], array( self::STATUS_EXPIRED, self::STATUS_CANCELLED ), true )
 			) {
@@ -1809,7 +1970,7 @@ class UAPPT_Booking {
 
 			$start_ts = self::local_ts( $booking['service_start'] );
 
-			$new_id = self::create_hold(
+			$new_id = self::create_hold_locked(
 				array(
 					'product_id'       => $booking['product_id'],
 					'plan_key'         => isset( $booking['plan_key'] ) ? (string) $booking['plan_key'] : '',
@@ -1831,29 +1992,41 @@ class UAPPT_Booking {
 					// 關掉，不該讓已付款的三人變成補鎖失敗。名額本身照樣檢查。
 					'is_relock'        => true,
 					'status'           => self::STATUS_CONFIRMED,
-				)
+				),
+				false
 			);
 
 			if ( is_wp_error( $new_id ) ) {
 				$result['ok']     = false;
-				$result['reason'] = 'taken';
+				$result['reason'] = in_array( $new_id->get_error_code(), array( 'uappt_insert_failed', 'uappt_update_failed' ), true ) ? 'confirm_failed' : 'taken';
 				return $result;
 			}
 
-			self::link_to_order( $new_id, $order_id, $order_item_id );
+			if ( ! self::link_to_order( $new_id, $order_id, $order_item_id ) ) {
+				$result['ok'] = false;
+				$result['reason'] = 'confirm_failed';
+				return $result;
+			}
 
 			// 舊的那筆（expired）也要跟這張訂單脫鉤，否則它的 order_id 還留著，
 			// 下次 handle_payment_complete() 再被觸發（例如 processing 之後又被
 			// 標記 completed）時，get_by_order() 會把它跟新的那筆一起撈出來。
 			// 就算這一步沒做到（中斷），下一次也會在上面的 find_relock_replacement()
 			// 找到新的那筆、補做脫鉤，不會再補鎖一次。
-			self::detach_from_order( $old_id );
+			if ( ! self::detach_from_order( $old_id ) || ! self::commit() ) {
+				$result['ok'] = false;
+				$result['reason'] = 'confirm_failed';
+				return $result;
+			}
+			$committed = true;
 
 			$result['booking_id'] = (int) $new_id;
 			$result['relocked']   = true;
 			return $result;
 		} finally {
-			$wpdb->query( $wpdb->prepare( 'SELECT RELEASE_LOCK( %s )', $lock_name ) ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+			if ( ! $committed ) {
+				$wpdb->query( 'ROLLBACK' ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+			}
 		}
 	}
 
@@ -1893,7 +2066,7 @@ class UAPPT_Booking {
 	 */
 	protected static function detach_from_order( $booking_id ) {
 		global $wpdb;
-		$wpdb->update( // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+		$updated = $wpdb->update( // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
 			UAPPT_Install::table( 'bookings' ),
 			array(
 				'order_id'      => null,
@@ -1904,6 +2077,11 @@ class UAPPT_Booking {
 			array( '%d', '%d', '%s' ),
 			array( '%d' )
 		);
+		if ( false === $updated ) {
+			return false;
+		}
+		$fresh = self::get( $booking_id );
+		return $fresh && null === $fresh['order_id'] && null === $fresh['order_item_id'];
 	}
 
 	/**
@@ -1978,13 +2156,18 @@ class UAPPT_Booking {
 			}
 		}
 
-		$wpdb->update( // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+		$updated = $wpdb->update( // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
 			UAPPT_Install::table( 'bookings' ),
 			$fields,
 			array( 'id' => (int) $booking_id ),
 			$formats,
 			array( '%d' )
 		);
+		if ( false === $updated ) {
+			return false;
+		}
+		$fresh = self::get( $booking_id );
+		return $fresh && (int) $fresh['order_id'] === (int) $order_id && (int) $fresh['order_item_id'] === (int) $order_item_id && null === $fresh['expires_at'];
 	}
 
 	/**
@@ -2064,7 +2247,7 @@ class UAPPT_Booking {
 	 *
 	 * 做法跟改期同一個交易樣式：鎖住每一筆預約列（依 id 排序）→ 算出每一格的增減 →
 	 * 確保新格子存在、鎖住所有碰到的格子（依 staff_id、slot_start 排序）→ 寫入增減 →
-	 * 把預約的 grid_interval 改成新的。任何一步失敗就整筆退回，呼叫端把間距改回原值，
+	 * 把預約的 grid_interval 改成新的。任何一步失敗，由外層把設定與搬移一起回滾，
 	 * 不會出現「設定改了、格子沒搬」的半套狀態。
 	 *
 	 * 搬到比較粗的間距時，兩筆原本不重疊的預約可能落在同一格、讓那一格超過容量。
@@ -2078,6 +2261,16 @@ class UAPPT_Booking {
 	 * @return true|WP_Error
 	 */
 	public static function regrid_staff( array $staff_ids, $new_interval ) {
+		if ( self::$grid_configuration_transaction ) {
+			return self::regrid_staff_locked( $staff_ids, $new_interval );
+		}
+		return self::update_grid_configuration( static function () use ( $staff_ids, $new_interval ) {
+			return self::regrid_staff_locked( $staff_ids, $new_interval );
+		} );
+	}
+
+	/** 已持有設定鎖與交易；錯誤交給外層統一回滾。 */
+	protected static function regrid_staff_locked( array $staff_ids, $new_interval ) {
 		global $wpdb;
 
 		$staff_ids    = array_values( array_unique( array_filter( array_map( 'intval', $staff_ids ) ) ) );
@@ -2092,32 +2285,37 @@ class UAPPT_Booking {
 		$ids = $wpdb->get_col( // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
 			$wpdb->prepare(
 				"SELECT id FROM {$table}
-				 WHERE staff_id IN ({$placeholders}) AND status IN (%s, %s) AND block_end > %s
+				 WHERE staff_id IN ({$placeholders}) AND status IN (%s, %s, %s, %s) AND block_end > %s
 				   AND ( grid_interval IS NULL OR grid_interval <> %d )
 				 ORDER BY id ASC", // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
-				array_merge( $staff_ids, array( self::STATUS_HELD, self::STATUS_CONFIRMED, current_time( 'mysql' ), $new_interval ) )
+				array_merge( $staff_ids, array( self::STATUS_HELD, self::STATUS_CONFIRMED, self::STATUS_COMPLETED, self::STATUS_NO_SHOW, current_time( 'mysql' ), $new_interval ) )
 			)
 		);
 
+		if ( ! empty( $wpdb->last_error ) ) {
+			return new WP_Error( 'uappt_regrid_failed', __( '讀取預約佔用失敗，請稍後再試。', 'ultimate-appointments' ) );
+		}
 		if ( ! $ids ) {
 			return true;
 		}
 
 		$error = new WP_Error( 'uappt_regrid_failed', __( '搬移既有預約的時間格時發生錯誤，時段間距沒有變更，請稍後再試。', 'ultimate-appointments' ) );
 
-		$wpdb->query( 'START TRANSACTION' ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
 
 		$deltas = array(); // staff_id => slot_start => 增減的名額
 		$moved  = array();
 
 		foreach ( $ids as $id ) {
 			$row = self::lock_booking_row( (int) $id );
-			if ( ! $row || ! in_array( $row['status'], array( self::STATUS_HELD, self::STATUS_CONFIRMED ), true ) || (int) $row['grid_interval'] === $new_interval ) {
+			if ( ! empty( $wpdb->last_error ) ) {
+				return $error;
+			}
+			if ( ! $row || ! in_array( $row['status'], array( self::STATUS_HELD, self::STATUS_CONFIRMED, self::STATUS_COMPLETED, self::STATUS_NO_SHOW ), true ) || (int) $row['grid_interval'] === $new_interval ) {
 				continue; // 查詢跟鎖住之間已經被取消或改過了。
 			}
 
 			$staff_id     = (int) $row['staff_id'];
-			$old_interval = ! empty( $row['grid_interval'] ) ? (int) $row['grid_interval'] : max( 5, (int) get_option( 'uappt_slot_interval_minutes', 15 ) );
+			$old_interval = ! empty( $row['grid_interval'] ) ? (int) $row['grid_interval'] : self::get_global_grid_interval();
 			$units        = max( 1, (int) $row['occupied_units'] );
 			$start_ts     = self::local_ts( $row['block_start'] );
 			$end_ts       = self::local_ts( $row['block_end'] );
@@ -2132,7 +2330,6 @@ class UAPPT_Booking {
 		}
 
 		if ( ! $moved ) {
-			$wpdb->query( 'ROLLBACK' ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
 			return true;
 		}
 
@@ -2150,7 +2347,6 @@ class UAPPT_Booking {
 		self::ensure_cells_exist( array(), $adding );
 		$locked = self::lock_cells( $touched );
 		if ( in_array( PHP_INT_MAX, $locked, true ) ) {
-			$wpdb->query( 'ROLLBACK' ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
 			return $error;
 		}
 
@@ -2163,7 +2359,6 @@ class UAPPT_Booking {
 			}
 			foreach ( $by_delta as $delta => $group ) {
 				if ( ! self::set_cells_occupied( $staff_id, $group, (int) $delta ) ) {
-					$wpdb->query( 'ROLLBACK' ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
 					return $error;
 				}
 			}
@@ -2177,11 +2372,10 @@ class UAPPT_Booking {
 			)
 		);
 		if ( false === $updated ) {
-			$wpdb->query( 'ROLLBACK' ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
 			return $error;
 		}
 
-		return self::commit() ? true : $error;
+		return true;
 	}
 
 	/**

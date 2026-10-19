@@ -86,6 +86,11 @@
 		 * @param {Function} callback 查完後要執行的動作（通常是接著查時段）。
 		 */
 		function loadStaffOptions( callback ) {
+			// 換服務的當下就清掉舊時段；新人員清單還在路上時，舊時段回應不能恢復可送出的值。
+			// 頁面剛載入（沒有 callback、不會接著查時段）時不能顯示「查詢中…」：
+			// 什麼都沒在查，那句話會讓人以為頁面卡住。
+			slotsSeq++;
+			resetSlot( callback ? UAPPT_Admin_Booking.i18n.loading : UAPPT_Admin_Booking.i18n.select_date );
 			if ( ! $staff.length ) {
 				if ( callback ) {
 					callback();
@@ -96,8 +101,12 @@
 			var seq = ++staffSeq;
 			var target = parseTarget();
 			var currentValue = $staff.val();
+			staffLoading = true;
+			$staff.prop( 'disabled', true );
 
 			if ( ! target.productId ) {
+				staffLoading = false;
+				$staff.prop( 'disabled', false );
 				$staff.empty().append( $( '<option/>', { value: '0', text: UAPPT_Admin_Booking.i18n.staff_any } ) );
 				if ( callback ) {
 					callback();
@@ -121,6 +130,12 @@
 					if ( seq !== staffSeq ) {
 						return;
 					}
+					if ( ! response || ! response.success || ! response.data || ! Array.isArray( response.data.staff ) ) {
+						staffLoadFailed();
+						return;
+					}
+					staffLoading = false;
+					$staff.prop( 'disabled', false );
 					$staff.empty().append( $( '<option/>', { value: '0', text: UAPPT_Admin_Booking.i18n.staff_any } ) );
 
 					var list = ( response && response.success && response.data.staff ) ? response.data.staff : [];
@@ -137,12 +152,28 @@
 						// 換方案後，如果先前選的人員在新方案裡還在候選名單中就保留選擇。
 						$staff.val( currentValue );
 					}
-				} )
-				.always( function () {
-					if ( callback && seq === staffSeq ) {
+					if ( callback ) {
 						callback();
 					}
+				} )
+				.fail( function () {
+					if ( seq === staffSeq ) {
+						staffLoadFailed();
+					}
 				} );
+		}
+
+		/**
+		 * 人員清單查不到：退回只有「不指定」一個選項，解除讀取中的狀態。
+		 *
+		 * 不能停在讀取中：那會讓人員選單一直停用、之後選日期時段也永遠是「查詢中…」，
+		 * 只剩重選服務一條路。不指定照樣可以查時段、建單（系統自己挑人）。
+		 */
+		function staffLoadFailed() {
+			staffLoading = false;
+			$staff.prop( 'disabled', false );
+			$staff.empty().append( $( '<option/>', { value: '0', text: UAPPT_Admin_Booking.i18n.staff_any } ) );
+			resetSlot( UAPPT_Admin_Booking.i18n.error );
 		}
 
 		// 請求序號（v3.4.1）：快速換日期時，較早的請求晚回來會把**送出用的隱藏日期與
@@ -150,11 +181,17 @@
 		// 可能完全合法，後端擋不下來。只認最新那一次的回應。
 		var slotsSeq = 0;
 		var staffSeq = 0;
+		var staffLoading = false;
 
 		function loadSlots() {
 			var seq = ++slotsSeq;
 			var target = parseTarget();
 			var date = $date.val();
+
+			if ( staffLoading ) {
+				resetSlot( UAPPT_Admin_Booking.i18n.loading );
+				return;
+			}
 
 			if ( ! target.productId || ! date ) {
 				resetSlot( UAPPT_Admin_Booking.i18n.select_date );
@@ -180,7 +217,7 @@
 					if ( seq !== slotsSeq ) {
 						return;
 					}
-					if ( ! response || ! response.success || ! response.data.slots || ! response.data.slots.length ) {
+					if ( ! response || ! response.success || ! response.data || ! Array.isArray( response.data.slots ) || ! response.data.slots.length ) {
 						resetSlot( UAPPT_Admin_Booking.i18n.no_slots );
 						return;
 					}
@@ -215,6 +252,12 @@
 		$staff.on( 'change', loadSlots );
 		$slot.on( 'change', function () {
 			$timeInput.val( $slot.val() );
+		} );
+		$slot.closest( 'form' ).on( 'submit', function ( event ) {
+			if ( staffLoading || ! $dateInput.val() || ! $timeInput.val() ) {
+				event.preventDefault();
+				$slot.trigger( 'focus' );
+			}
 		} );
 
 		loadStaffOptions();

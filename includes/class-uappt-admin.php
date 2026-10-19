@@ -895,8 +895,7 @@ class UAPPT_Admin {
 		}
 
 		if ( 'manual-booking' === $page ) {
-			// 沿用 WooCommerce 內建的會員搜尋（wc-enhanced-select 提供 select2 +
-			// woocommerce_json_search_customers AJAX 端點），不用自己另外做一套。
+			// 沿用 WooCommerce 的 SelectWoo，搜尋入口採預約管理權限，不需訂單編輯權限。
 			wp_enqueue_style( 'woocommerce_admin_styles' );
 			wp_enqueue_script( 'wc-enhanced-select' );
 			wp_enqueue_script( 'uappt-admin-manual-booking', UAPPT_PLUGIN_URL . 'assets/js/admin-manual-booking.js', array( 'jquery', 'wc-enhanced-select' ), UAPPT_VERSION, true );
@@ -908,6 +907,11 @@ class UAPPT_Admin {
 					'nonce'    => wp_create_nonce( 'uappt_slots_nonce' ),
 					'i18n'     => array(
 						'search_placeholder' => __( '輸入姓名、電話或 Email 搜尋會員…', 'ultimate-appointments' ),
+						'loading' => __( '讀取會員資料中…', 'ultimate-appointments' ),
+						'lookup_failed' => __( '會員資料讀取失敗，請重試或確認手動填寫的資料。', 'ultimate-appointments' ),
+						'retry' => __( '重試', 'ultimate-appointments' ),
+						'use_manual' => __( '改用手動填寫', 'ultimate-appointments' ),
+						'manual_hint' => __( '請確認姓名與電話後再送出。', 'ultimate-appointments' ),
 					),
 				)
 			);
@@ -1166,6 +1170,10 @@ class UAPPT_Admin {
 			case 'booking_completed':
 				$message = __( '已標記為完成。', 'ultimate-appointments' );
 				break;
+			case 'booking_complete_failed':
+				$type = 'error';
+				$message = __( '無法完成這筆預約。請確認仍為已確認狀態，或稍後重試；預約狀態與耗材異動沒有分開儲存。', 'ultimate-appointments' );
+				break;
 			case 'booking_no_show':
 				$message = __( '已標記為未到。這筆預約的服務時間已經過去，預設的「即將到來」檢視不會列出它，請到「全部」或「已過期」頁籤查看。', 'ultimate-appointments' );
 				break;
@@ -1174,7 +1182,7 @@ class UAPPT_Admin {
 				break;
 			case 'booking_revert_failed':
 				$type    = 'error';
-				$message = __( '無法還原這筆預約。只有「已完成」與「未到」可以還原成「已確認」——已取消／已逾時釋放的預約時段早就還給別人了，還原會造成超賣，需要重新建立預約。', 'ultimate-appointments' );
+				$message = __( '無法還原這筆預約。請確認狀態為「已完成」或「未到」；若資料儲存失敗，狀態與耗材異動會一起回復，請稍後重試。已取消或已逾時的預約需重新建立。', 'ultimate-appointments' );
 				break;
 			case 'booking_updated':
 				$message = __( '已儲存變更。', 'ultimate-appointments' );
@@ -2543,47 +2551,48 @@ class UAPPT_Admin {
 	/**
 	 * 存全域時間格間距；有變的話把沿用全域的人員的佔用搬到新格子上（v3.4.1）。
 	 *
-	 * 先存設定、再搬：存檔之後才建立的預約已經用新間距，搬的時候自然會略過。搬不成
-	 * 就把設定改回去，不留「間距改了、格子沒搬」的半套狀態——那正是會超賣的狀態。
+	 * 與所有容量寫入共用鎖，設定與搬移一併提交；失敗時一併回滾。
 	 *
 	 * @param int $new_interval 新的間距（分鐘）。
 	 * @return string 錯誤訊息；成功或沒有變更時回傳空字串。
 	 */
 	protected static function save_global_slot_interval( $new_interval ) {
-		global $wpdb;
-
-		$old_interval = max( 5, (int) get_option( 'uappt_slot_interval_minutes', 15 ) );
-		if ( $old_interval === $new_interval ) {
-			return '';
-		}
-
-		$bookings = UAPPT_Install::table( 'bookings' );
-		$staff    = UAPPT_Install::table( 'staff' );
-
-		// 很舊的紀錄可能沒有存 grid_interval，釋放時一律退回「當下的全域間距」。全域一改，
-		// 那些紀錄就會用錯的間距還格子——先把它們蓋上「到目前為止用的值」，語意不變。
-		$wpdb->query( // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
-			$wpdb->prepare(
-				"UPDATE {$bookings} SET grid_interval = %d WHERE ( grid_interval IS NULL OR grid_interval = 0 ) AND status IN (%s, %s)", // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
-				$old_interval,
-				UAPPT_Booking::STATUS_HELD,
-				UAPPT_Booking::STATUS_CONFIRMED
-			)
-		);
-
-		update_option( 'uappt_slot_interval_minutes', $new_interval );
-
-		// 沿用全域間距的人員，佔用要搬到新格子上（見 UAPPT_Booking::regrid_staff()）。
-		// 自己設了間距的人員不受影響。
-		$staff_ids = $wpdb->get_col( "SELECT id FROM {$staff} WHERE slot_interval IS NULL OR slot_interval = 0" ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
-		$regrid    = UAPPT_Booking::regrid_staff( array_map( 'intval', $staff_ids ), $new_interval );
-
-		if ( is_wp_error( $regrid ) ) {
-			update_option( 'uappt_slot_interval_minutes', $old_interval );
-			return __( '其他設定已經存好，但搬移既有預約的時間格時發生錯誤，「時段間距」維持原本的設定，請稍後再試一次。', 'ultimate-appointments' );
-		}
-
-		return '';
+		$new_interval = max( 5, (int) $new_interval );
+		$result = UAPPT_Booking::update_grid_configuration( static function () use ( $new_interval ) {
+			global $wpdb;
+			$old_interval = UAPPT_Booking::get_global_grid_interval();
+			if ( $old_interval === $new_interval ) {
+				return true;
+			}
+			$bookings = UAPPT_Install::table( 'bookings' );
+			$staff = UAPPT_Install::table( 'staff' );
+			$error = new WP_Error( 'uappt_regrid_failed', __( '時段間距與既有佔用未能一起儲存，已保留原設定，請稍後再試。', 'ultimate-appointments' ) );
+			// 舊資料的釋放依賴全域值，改設定前先保存原本的粒度（含仍佔格的完成／未到）。
+			$stamped = $wpdb->query( $wpdb->prepare(
+				"UPDATE {$bookings} SET grid_interval = %d WHERE (grid_interval IS NULL OR grid_interval = 0) AND status IN (%s, %s, %s, %s)",
+				$old_interval, UAPPT_Booking::STATUS_HELD, UAPPT_Booking::STATUS_CONFIRMED, UAPPT_Booking::STATUS_COMPLETED, UAPPT_Booking::STATUS_NO_SHOW
+			) ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+			if ( false === $stamped ) {
+				return $error;
+			}
+			$staff_ids = $wpdb->get_col( "SELECT id FROM {$staff} WHERE slot_interval IS NULL OR slot_interval = 0" ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+			if ( ! empty( $wpdb->last_error ) ) {
+				return $error;
+			}
+			$regrid = UAPPT_Booking::regrid_staff( array_map( 'intval', $staff_ids ), $new_interval );
+			if ( is_wp_error( $regrid ) ) {
+				return $regrid;
+			}
+			// 等鎖前可能讀過舊快取，先清除；提交／回滾時外層還會再清一次。
+			wp_cache_delete( 'uappt_slot_interval_minutes', 'options' );
+			wp_cache_delete( 'alloptions', 'options' );
+			wp_cache_delete( 'notoptions', 'options' );
+			if ( ! update_option( 'uappt_slot_interval_minutes', $new_interval ) ) {
+				return $error;
+			}
+			return UAPPT_Booking::get_global_grid_interval() === $new_interval ? true : $error;
+		} );
+		return is_wp_error( $result ) ? $result->get_error_message() : '';
 	}
 
 	protected static function settings_saved_notice( array $segment_errors, array $payment_errors ) {
@@ -4075,18 +4084,17 @@ class UAPPT_Admin {
 		$booking_id = isset( $_POST['booking_id'] ) ? absint( $_POST['booking_id'] ) : 0;
 		check_admin_referer( 'uappt_edit_booking_' . $booking_id );
 
-		if ( $booking_id ) {
-			UAPPT_Booking::complete( $booking_id );
-		}
+		$ok = $booking_id && UAPPT_Booking::complete( $booking_id );
+		$notice = $ok ? 'booking_completed' : 'booking_complete_failed';
 
 		$this->redirect_back(
 			'uappt-bookings',
 			array(
 				'action'      => 'edit',
 				'booking_id'  => $booking_id,
-				'uappt_notice' => 'booking_completed',
+				'uappt_notice' => $notice,
 			),
-			array( 'uappt_notice' => 'booking_completed' )
+			array( 'uappt_notice' => $notice )
 		);
 	}
 
@@ -8084,12 +8092,15 @@ class UAPPT_Admin {
 		if ( ! $id ) {
 			$opening = isset( $_POST['opening_stock'] ) ? (float) wc_format_decimal( wp_unslash( $_POST['opening_stock'] ) ) : 0.0; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput
 			if ( $opening > 0 ) {
-				UAPPT_Consumable::record_move(
+				$opening_result = UAPPT_Consumable::record_move(
 					$result,
 					UAPPT_Consumable::MOVE_RESTOCK,
 					$opening,
 					array( 'note' => __( '期初庫存', 'ultimate-appointments' ) )
 				);
+				if ( is_wp_error( $opening_result ) ) {
+					$this->redirect_with_error( 'uappt-consumables', __( '耗材主檔已建立，但期初庫存未能儲存，請到「補貨」登錄期初數量。', 'ultimate-appointments' ) );
+				}
 			}
 		}
 

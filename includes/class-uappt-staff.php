@@ -298,6 +298,44 @@ class UAPPT_Staff {
 	 * @return int|WP_Error 人員 ID；時間格式錯誤或使用者已被別人綁定時回傳包含具體描述的 WP_Error。
 	 */
 	public static function save( $data ) {
+		// ⚠️ **只有「實際生效的時間格間距」會變的存檔，才走時間格鎖與交易**（v3.4.2 複查）。
+		// update_grid_configuration() 會跟全站所有預約寫入排隊，還要求四張表都是 InnoDB。
+		// 改名、快速停用、CSV 匯入這類一般存檔不需要：每次都走的話，存檔（含重鋪班表的
+		// 幾百列寫入）期間全站都不能預約，而 wp_options 還是 MyISAM 的舊站會連人員都存不了。
+		if ( ! self::changes_grid_interval( $data ) ) {
+			return self::save_locked( $data );
+		}
+		return UAPPT_Booking::update_grid_configuration( static function () use ( $data ) {
+			return self::save_locked( $data );
+		} );
+	}
+
+	/**
+	 * 這次存檔會不會改變這位人員實際生效的時間格間距（自己的值，或改成／改回沿用全域）。
+	 *
+	 * 新人員還沒有任何預約可以搬，一律不算。
+	 *
+	 * @param array $data save() 的資料。
+	 * @return bool
+	 */
+	protected static function changes_grid_interval( $data ) {
+		global $wpdb;
+		if ( empty( $data['id'] ) ) {
+			return false;
+		}
+		$table  = UAPPT_Install::table( 'staff' );
+		$before = $wpdb->get_var( $wpdb->prepare( "SELECT slot_interval FROM {$table} WHERE id = %d", (int) $data['id'] ) ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+		$global = max( 5, (int) get_option( 'uappt_slot_interval_minutes', 15 ) );
+		$new    = ( isset( $data['slot_interval'] ) && '' !== $data['slot_interval'] ) ? max( 5, (int) $data['slot_interval'] ) : 0;
+
+		$before_interval = $before ? max( 5, (int) $before ) : $global;
+		$after_interval  = $new ? $new : $global;
+
+		return $before_interval !== $after_interval;
+	}
+
+	/** 人員設定與時間格搬移共用外層交易及鎖。 */
+	protected static function save_locked( $data ) {
 		global $wpdb;
 		$table = UAPPT_Install::table( 'staff' );
 
@@ -428,20 +466,24 @@ class UAPPT_Staff {
 				|| (int) $before['is_24h'] !== ( $is_24h ? 1 : 0 )
 				|| ( '' !== $schedule_mode && $schedule_mode !== $before_mode );
 
-			$wpdb->update( $table, $fields, array( 'id' => $staff_id ), self::formats_for( $fields, $field_formats ), array( '%d' ) ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+			if ( ! $before || false === $wpdb->update( $table, $fields, array( 'id' => $staff_id ), self::formats_for( $fields, $field_formats ), array( '%d' ) ) ) { // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+				return new WP_Error( 'uappt_staff_save_failed', __( '儲存人員資料失敗，請稍後再試。', 'ultimate-appointments' ) );
+			}
 
-			// 實際生效的時間格間距變了（自己的值，或改成／改回沿用全域）：把還沒結束的佔用
-			// 搬到新格子上，見 UAPPT_Booking::regrid_staff()（v3.4.1）。先存設定再搬：存檔
-			// 之後才建立的預約已經用新間距，搬的時候自然會略過它們。搬不成就把間距改回去，
-			// 不留「設定改了、格子沒搬」的半套狀態。
-			$global_interval = max( 5, (int) get_option( 'uappt_slot_interval_minutes', 15 ) );
+			// 間距與搬格在同一鎖及交易內，任何一步失敗都整筆復原。
+			$global_interval = UAPPT_Booking::get_global_grid_interval();
 			$before_interval = ( $before && ! empty( $before['slot_interval'] ) ) ? max( 5, (int) $before['slot_interval'] ) : $global_interval;
 			$after_interval  = $slot_interval ? $slot_interval : $global_interval;
 			if ( $before && $before_interval !== $after_interval ) {
-				$regrid = UAPPT_Booking::regrid_staff( array( $staff_id ), $after_interval );
+				$in_transaction = UAPPT_Booking::in_grid_configuration();
+				$regrid         = UAPPT_Booking::regrid_staff( array( $staff_id ), $after_interval );
 				if ( is_wp_error( $regrid ) ) {
-					$wpdb->update( $table, array( 'slot_interval' => empty( $before['slot_interval'] ) ? null : (int) $before['slot_interval'] ), array( 'id' => $staff_id ), array( '%d' ), array( '%d' ) ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
-					return new WP_Error( 'uappt_regrid_failed', __( '其他欄位已經存好，但搬移既有預約的時間格時發生錯誤，「時段間距」維持原本的設定，請稍後再試一次。', 'ultimate-appointments' ) );
+					// 沒有外層交易（save() 判斷間距不變、寫入時卻變了的競態）：這一筆的間距已經
+					// 寫進去了，要自己改回去，不留「間距改了、格子沒搬」的半套狀態。
+					if ( ! $in_transaction ) {
+						$wpdb->update( $table, array( 'slot_interval' => empty( $before['slot_interval'] ) ? null : (int) $before['slot_interval'] ), array( 'id' => $staff_id ), array( '%d' ), array( '%d' ) ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+					}
+					return $regrid;
 				}
 			}
 
@@ -464,7 +506,9 @@ class UAPPT_Staff {
 			$fields['schedule_mode'] = self::template_has_ranges( isset( $data['business_hours'] ) ? $data['business_hours'] : array() ) ? self::MODE_FIXED : self::MODE_FLEX;
 		}
 
-		$wpdb->insert( $table, $fields, self::formats_for( $fields, $field_formats ) ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+		if ( ! $wpdb->insert( $table, $fields, self::formats_for( $fields, $field_formats ) ) ) { // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared
+			return new WP_Error( 'uappt_staff_save_failed', __( '儲存人員資料失敗，請稍後再試。', 'ultimate-appointments' ) );
+		}
 		$staff_id = (int) $wpdb->insert_id;
 
 		// 新建立的人員：樣板填了什麼就立刻鋪成班表。不鋪的話要等 cron 跑過才會
@@ -574,7 +618,7 @@ class UAPPT_Staff {
 		if ( is_array( $staff ) && ! empty( $staff['slot_interval'] ) ) {
 			return max( 5, (int) $staff['slot_interval'] );
 		}
-		return max( 5, (int) get_option( 'uappt_slot_interval_minutes', 15 ) );
+		return UAPPT_Booking::get_global_grid_interval();
 	}
 
 	/**
